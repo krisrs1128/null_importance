@@ -4,7 +4,6 @@ Properties take ExplanatoryObject's as inputs and return whether the object
 satisfies the property.
 """
 
-from __future__ import annotations
 import numpy as np
 
 

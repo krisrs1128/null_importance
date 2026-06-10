@@ -5,10 +5,7 @@ combinations. Can think of them as points in 4D space, we move along particular
 axes.
 """
 
-from __future__ import annotations
-
 import numpy as np
-
 from .core import Explainer
 from .index import FeatureCoalitions, PathSteps, UnitIndices
 from .intervention import BaselineMask, MarginalMask, ZeroMask

@@ -10,8 +10,6 @@ We can use the same interface for mechanistic methods, but the masks are applied
 in a latent space.
 """
 
-from __future__ import annotations
-
 import numpy as np
 
 

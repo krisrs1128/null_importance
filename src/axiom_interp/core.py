@@ -6,8 +6,6 @@ The atomic-statistics { I_j(.) } are computed once and saved. Swapping only the
 aggregator (SHAP -> minSHAP) reuses those summaries.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, replace as _dc_replace
 
 import numpy as np

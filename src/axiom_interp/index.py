@@ -5,8 +5,6 @@ what an element means (a coalition ordering, a path location, a unit id), so the
 index and the statistic are chosen together but stay independently swappable.
 """
 
-from __future__ import annotations
-
 import numpy as np
 
 

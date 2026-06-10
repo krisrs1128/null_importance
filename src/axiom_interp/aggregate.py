@@ -1,8 +1,6 @@
 """A: reduce a unit's atomic vector to one score.
 """
 
-from __future__ import annotations
-
 import numpy as np
 
 
