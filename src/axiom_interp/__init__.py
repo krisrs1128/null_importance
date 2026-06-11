@@ -1,7 +1,6 @@
-"""axiom_interp: a grammar of interpretability.
+"""Grammar of Interpretability
 
-Every method is a point in (index x intervention x atomic x aggregator). Build
-one, move a single axis to get another:
+Every method is determined by (index x intervention x atomic x aggregator).
 
     >>> e = presets.shap(background)
     >>> e_min = e.replace(aggregator=aggregate.Min())   # minSHAP

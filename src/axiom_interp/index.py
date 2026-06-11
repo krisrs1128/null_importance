@@ -1,8 +1,9 @@
-"""The index axis Omega: what we enumerate/sample to probe f.
+"""Omega Definition
 
-Each IndexSpace yields a list of *elements* omega. The atomic statistic decides
-what an element means (a coalition ordering, a path location, a unit id), so the
-index and the statistic are chosen together but stay independently swappable.
+The IndexSpace class saves a list of Omega elements. The atomic statistics are
+defined with respect to particular instantiations of Omega's elements (e.g., a
+coalition ordering or a path location), but the classes can remain independently
+recombinable.
 """
 
 import numpy as np
