@@ -1,10 +1,10 @@
 """Feature-removed/Intervened versions of f evaluation
 
-The explainer needs a version of f with some
-coordinates present (kept at their x-value) and the rest absent (filled in by a
-reference rule). In SHAP, the reference rule replaces f with the marginal
-E[f(x[S], X[-S])].  Changing this to conditional gives causal SHAP without
-changing any of the other method components.
+The explainer needs a version of f with some coordinates present (kept at their
+x-value) and the rest absent (filled in by a reference rule). In SHAP, the
+reference rule replaces f with the marginal E[f(x[S], X[-S])]. Changing this to
+conditional gives causal SHAP without changing any of the other method
+components.
 
 We can use the same interface for mechanistic methods, but the masks are applied
 in a latent space.
@@ -21,7 +21,7 @@ class Intervention:
 
 
 class BaselineMask(Intervention):
-    """Absent coordinates take a fixed baseline x0 (functional v(S))."""
+    """Feature removal by replacement with a fixed baseline x0."""
 
     def __init__(self, baseline: np.ndarray):
         self.baseline = np.asarray(baseline, dtype=float)
@@ -38,9 +38,7 @@ class BaselineMask(Intervention):
 
 
 class ZeroMask(Intervention):
-    """Absent coordinates take 0, regardless of dimension.
-
-    The dimension-agnostic reference used by latent ablation: f(z) vs f(z_{-j}).
+    """Feature removal by replacing coordinates with 0s
     """
 
     def value(self, f, x, active) -> float:
@@ -56,7 +54,7 @@ class ZeroMask(Intervention):
 
 
 class MarginalMask(Intervention):
-    """Absent coordinates are drawn from a background sample (statistical v(S)).
+    """Feature removal by sampling coordinates from the background data
 
     v(S) = E_{X~bg}[ f(x_S, X_{-S}) ], estimated by averaging over rows of `bg`.
     """

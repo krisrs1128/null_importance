@@ -39,7 +39,7 @@ class Min(Aggregator):
 
 
 class Identity(Aggregator):
-    """For statistics that already emit one value per unit (LOCO, SAE)."""
+    """For statistics that that do not aggregate across samples (LOCO, SAE)."""
 
     def reduce(self, atomic: np.ndarray) -> float:
         return float(atomic.reshape(-1)[0])

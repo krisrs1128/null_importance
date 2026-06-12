@@ -5,7 +5,6 @@ combinations. Can think of them as points in 4D space, we move along particular
 axes.
 """
 
-import numpy as np
 from .core import Explainer
 from .index import FeatureCoalitions, PathSteps, UnitIndices
 from .intervention import BaselineMask, MarginalMask, ZeroMask
@@ -23,12 +22,12 @@ def shap(background, n_orderings=200, seed=0) -> Explainer:
 
 
 def minshap(background, n_orderings=200, seed=0) -> Explainer:
-    # one swap from shap: aggregator ShapleyWeights -> Min
+    # Compared to shap, this replaces the aggregator ShapleyWeights -> Min
     return shap(background, n_orderings, seed).replace(aggregator=Min())
 
 
 def baseline_shap(baseline, n_orderings=200, seed=0) -> Explainer:
-    # one swap from shap: intervention MarginalMask -> BaselineMask (functional v)
+    # Compared to shap, this replaces MarginalMask -> BaselineMask
     return Explainer(
         index=FeatureCoalitions(n_orderings, seed),
         intervention=BaselineMask(baseline),
@@ -40,16 +39,17 @@ def baseline_shap(baseline, n_orderings=200, seed=0) -> Explainer:
 def integrated_gradients(baseline, n_steps=64) -> Explainer:
     return Explainer(
         index=PathSteps(n_steps),
-        intervention=BaselineMask(baseline),  # unused by the atomic, kept for symmetry
+        intervention=BaselineMask(baseline),  # unused by the atomic
         atomic=PathIntegratedGradient(baseline),
         aggregator=Mean(),
     )
 
 
 def sae_attribution() -> Explainer:
-    """Mechanistic, same skeleton: latent ablation with a zero reference.
+    """Mechanistic methods apply feature removal to latent features
 
-    Call .explain(f, z) where f = downstream . decode and z is the latent code.
+    Call .explain(f, z) where f = downstream decoded function value and z is the
+    latent code.
     """
     return Explainer(
         index=UnitIndices(),

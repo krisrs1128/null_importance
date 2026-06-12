@@ -19,7 +19,7 @@ class FeatureCoalitions(IndexSpace):
 
     A single ordering yields one marginal-contribution sample per feature
     (predecessors = the coalition). Averaging over orderings is the unbiased
-    Shapley estimate (Strumbelj-Kononenko). We do NOT enumerate the powerset.
+    Shapley estimate.
     """
 
     def __init__(self, n_orderings: int = 200, seed: int = 0):

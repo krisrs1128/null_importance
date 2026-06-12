@@ -5,7 +5,7 @@ import numpy as np
 
 
 def _grad(f, point: np.ndarray, eps: float = 1e-5) -> np.ndarray:
-    """Central finite-difference gradient of scalar f at a single point."""
+    """Finite-difference approximation of the gradient of a scalar f."""
     d = len(point)
     g = np.zeros(d)
     for j in range(d):
@@ -21,7 +21,7 @@ class AtomicStatistic:
 
 
 class MarginalContribution(AtomicStatistic):
-    """v(S u {j}) - v(S), where S = predecessors of j in an ordering element."""
+    """v(S u {j}) - v(S), where S = predecessors of j in IME."""
 
     def compute_all(self, f, intervention, elements, x) -> dict:
         d = len(x)
@@ -38,7 +38,7 @@ class MarginalContribution(AtomicStatistic):
 
 
 class PathIntegratedGradient(AtomicStatistic):
-    """(x_j - x0_j) * df/dx_j along the straight path from baseline x0 to x."""
+    """(x_j - x0_j) * df/dx_j along the path from x0 to x."""
 
     def __init__(self, baseline: np.ndarray):
         self.baseline = np.asarray(baseline, dtype=float)
@@ -58,11 +58,11 @@ class PathIntegratedGradient(AtomicStatistic):
 
 
 class AblationDelta(AtomicStatistic):
-    """v(all units) - v(all units except j): the drop from removing unit j.
+    """v(all units) - v(all units except j)
 
-    With f = downstream . decode and a zero-reference intervention in latent
-    space this is exactly the sparse-autoencoder feature attribution
-    f(Dz) - f(Dz_{-j}) -- the same skeleton as input attribution.
+    If f is the decoder model and if we intervene by zeroing out coordinates in
+    the latent space, then this is exactly the sparse-autoencoder feature
+    attribution f(Dz) - f(Dz_{-j}).
     """
 
     def compute_all(self, f, intervention, elements, x) -> dict:
