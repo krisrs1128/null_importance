@@ -1,0 +1,34 @@
+datasets:
+  mrna: "TCGA.BRCA.sampleMap/HiSeqV2"
+  mirna: "TCGA.BRCA.sampleMap/miRNA_HiSeq_gene"
+  protein: "TCGA.BRCA.sampleMap/RPPA_RBN"
+  clinical: "TCGA.BRCA.sampleMap/BRCA_clinicalMatrix"
+
+outcome:
+  field: "histological_type"
+  classes:
+    - "Infiltrating Ductal Carcinoma"
+    - "Infiltrating Lobular Carcinoma"
+
+# Clinical variables to regress out before modeling
+covariates:
+  - "age_at_initial_pathologic_diagnosis"
+  - "gender"
+  - "race"
+
+# Top-K most variable features retained for mRNA
+top_features: 1000
+
+rf:
+  n_trees: 500
+  min_samples_leaf: [1, 3, 6]   # nodesizes tuned via OOB MCC
+
+cv:
+  n_folds: 5
+
+# A few of the 40 seeds from Novoloaca et al. 2024
+seeds:
+  - 895404
+  - 392954
+  - 953004
+  - 876087
