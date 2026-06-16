@@ -1,0 +1,19 @@
+# Case studies environments
+
+name: interpretability_case_studies
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - pyarrow
+  - pyyaml
+  - jupyter
+  - matplotlib
+  - seaborn
+  - pip:
+    - ipykernel
