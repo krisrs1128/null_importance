@@ -1,0 +1,28 @@
+dataset:
+  url: "https://zenodo.org/records/18371236/files/enhancer.Rdata?download=1"
+  raw_file: "enhancer.Rdata"
+  x_object: "X"
+  y_object: "Y"
+
+outcome:
+  classes:
+    - "inactive"
+    - "active"
+
+rf:
+  n_trees: 500
+  min_samples_leaf: [1, 3, 6]
+
+cv:
+  n_folds: 5
+
+# Reuse the TCGA seeds for consistency across case studies.
+seeds:
+  - 895404
+  - 392954
+  - 953004
+  - 876087
+
+explain:
+  n_orderings: 200
+  n_background: 50
