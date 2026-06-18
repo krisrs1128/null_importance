@@ -1,6 +1,14 @@
-"""RF_concat pipeline for TCGA BRCA multi-omics (Novoloaca et al. 2024).
+"""Random forest prediction pipeline for Drosophila enhancer activity.
 
-Run download_tcga.R first, then:
+This is the same prediction problem as S. Basu, ... B. Yu "Iterative Random
+Forest" paper. We're using a simpler SHAP-based interpretation. The overall
+implementation mimics the tcga_brca case study.
+
+  - 5-fold stratified nested CV
+  - OOB hyperparameter tuning (min_samples_leaf, max_features)
+  - final model refit on all samples. This is what we explain later.
+
+Run with:
     python pipeline.py
     python pipeline.py --n-reps 2
 """
