@@ -42,15 +42,19 @@ def _read_with_rscript(path: Path, x_object: str, y_object: str) -> tuple[pd.Dat
         x_csv = tmp / "X.csv"
         y_csv = tmp / "y.csv"
 
+        path_escaped = str(path).replace("'", "\\'")
+        x_csv_escaped = str(x_csv).replace("'", "\\'")
+        y_csv_escaped = str(y_csv).replace("'", "\\'")
+
         r_code = f"""
-        load('{str(path).replace("'", "\\'")}')
+        load('{path_escaped}')
         if (!exists('{x_object}') || !exists('{y_object}')) {{
           stop('Missing expected objects in RData')
         }}
         X <- get('{x_object}')
         Y <- get('{y_object}')
-        write.csv(X, '{str(x_csv).replace("'", "\\'")}', row.names = TRUE)
-        write.csv(data.frame(y = as.integer(Y)), '{str(y_csv).replace("'", "\\'")}', row.names = FALSE)
+        write.csv(X, '{x_csv_escaped}', row.names = TRUE)
+        write.csv(data.frame(y = as.integer(Y)), '{y_csv_escaped}', row.names = FALSE)
         """
         subprocess.run(["Rscript", "-e", r_code], check=True)
 
