@@ -95,13 +95,7 @@ def preprocess(X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd.Series]:
 
 
 def load_data(config):
-    """Return (X, y, y_labels, omic_slices).
-
-    X: DataFrame (samples × features)
-    y: Series of integer labels in {0,1}
-    y_labels: mapping of codes to class names
-    omic_slices: single slice for compatibility with tcga interface
-    """
+    """Return (X, y, y_labels) after downloading and preprocessing."""
     ds = config["dataset"]
     base = Path(__file__).parent
     raw_path = base / "data" / "raw" / ds["raw_file"]
@@ -111,5 +105,4 @@ def load_data(config):
     X, y = preprocess(X, y)
 
     y_labels = config["outcome"]["classes"]
-    omic_slices = {"regulatory": slice(0, X.shape[1])}
-    return X, y, y_labels, omic_slices
+    return X, y, y_labels

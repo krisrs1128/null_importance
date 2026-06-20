@@ -21,7 +21,7 @@ def run(base_dir, load_data_fn, n_reps=1):
         y_labels = config["outcome"]["classes"]
     else:
         print("Preprocessing raw data (first run) …")
-        X, y, y_labels, _ = load_data_fn(config)
+        X, y, y_labels = load_data_fn(config)
         data_dir.mkdir(exist_ok=True)
         X.to_parquet(X_path)
         y.to_frame().to_parquet(y_path)

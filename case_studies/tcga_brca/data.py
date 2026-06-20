@@ -12,14 +12,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import OneHotEncoder
-
-
-def load_config(config_path):
-    with open(config_path) as f:
-        return yaml.safe_load(f)
 
 
 def load_cached_tsv(cache_dir, dataset_id):
@@ -69,13 +63,7 @@ def adjust_covariates(X_df, cov_df):
 
 
 def load_data(config):
-    """Return (X, y, y_labels, omic_slices) after full preprocessing.
-
-    X: DataFrame (samples × features), columns prefixed by omic name
-    y: Series of integer codes (0 = IDC, 1 = ILC by default ordering in config)
-    y_labels: list mapping code → class name
-    omic_slices: dict of slice objects into X.columns for each omic
-    """
+    """Return (X, y, y_labels) after full preprocessing."""
     cache_dir = Path(__file__).parent / "data" / "raw"
     ds = config["datasets"]
 
@@ -132,13 +120,6 @@ def load_data(config):
     mirna.columns = [f"mirna__{c}" for c in mirna.columns]
     protein.columns = [f"protein__{c}" for c in protein.columns]
 
-    n_mrna, n_mirna, n_protein = mrna.shape[1], mirna.shape[1], protein.shape[1]
     X = pd.concat([mrna, mirna, protein], axis=1)
 
-    omic_slices = {
-        "mrna": slice(0, n_mrna),
-        "mirna": slice(n_mrna, n_mrna + n_mirna),
-        "protein": slice(n_mrna + n_mirna, n_mrna + n_mirna + n_protein),
-    }
-
-    return X, y, y_labels, omic_slices
+    return X, y, y_labels
