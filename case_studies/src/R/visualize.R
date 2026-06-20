@@ -1,8 +1,50 @@
 #' Visualize the attribution results
 
 library(tidyverse)
-library(ggthemes)
 library(fs)
+
+#' Color anchors for the case-study figures.
+#'
+#' Drawn from two inspiration images: a deep-blue motif painting and a warm
+#' grayscale op-art print. \code{diverging} runs negative -> zero -> positive
+#' with warm ivory as the visual zero.
+axiom_palette <- list(
+    ink = "#2A2724",
+    bg = "#FBFAF7",
+    grid = "#E2DBD4",
+    accent = "#066AE5",
+    diverging = c("#0433DC", "#049fdc", "#E2DBD4", "#fb315d", "#dc0433")
+)
+
+#' A minimal, warm-neutral theme for the attribution figures.
+#'
+#' @param base_size Numeric. Base font size.
+#' @return A ggplot2 theme object.
+theme_axiomatic <- function(base_size = 10) {
+    theme_minimal(base_size = base_size) +
+        theme(
+            text = element_text(color = axiom_palette$ink),
+            plot.title = element_text(hjust = 0, face = "plain", size = rel(1.1)),
+            plot.background = element_rect(fill = axiom_palette$bg, color = NA),
+            panel.background = element_rect(fill = axiom_palette$bg, color = NA),
+            panel.border = element_blank(),
+            panel.grid.major = element_line(color = axiom_palette$grid, linewidth = 0.3),
+            panel.grid.minor = element_blank(),
+            axis.text = element_text(color = axiom_palette$ink),
+            axis.ticks = element_blank(),
+            legend.position = "right",
+            legend.key.size = unit(0.8, "cm")
+        )
+}
+
+#' Diverging fill scale for SHAP / attribution values.
+#'
+#' @param limits Numeric length-2 vector or \code{NULL}. Fill limits.
+#' @param name Character. Legend title.
+#' @return A ggplot2 fill scale.
+scale_fill_shap <- function(limits = NULL, name = "SHAP") {
+    scale_fill_gradientn(colours = axiom_palette$diverging, limits = limits, name = name)
+}
 
 #' Load attributions and sample metadata from a case study results directory.
 #'
@@ -35,12 +77,8 @@ attribution_barplot <- function(row_idx, attr_df, method_label, top_n = 10) {
         value = vals[top_idx]
     ) |>
         mutate(feature = fct_reorder(feature, abs(value))) |>
-        ggplot(aes(value, feature, fill = value > 0)) +
-        geom_col() +
-        scale_fill_manual(
-            values = c(`TRUE` = "#31a354", `FALSE` = "#e34a33"),
-            guide = "none"
-        ) +
+        ggplot(aes(value, feature)) +
+        geom_col(fill = axiom_palette$ink) +
         labs(x = method_label, y = NULL) +
-        theme_economist(base_size = 8)
+        theme_axiomatic(base_size = 10)
 }
