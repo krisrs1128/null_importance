@@ -42,19 +42,18 @@ def _read_with_rscript(path: Path, x_object: str, y_object: str) -> tuple[pd.Dat
         x_csv = tmp / "X.csv"
         y_csv = tmp / "y.csv"
 
-        path_escaped = str(path).replace("'", "\\'")
-        x_csv_escaped = str(x_csv).replace("'", "\\'")
-        y_csv_escaped = str(y_csv).replace("'", "\\'")
-
+        path_r = str(path).replace("'", "\\'")
+        x_csv_r = str(x_csv).replace("'", "\\'")
+        y_csv_r = str(y_csv).replace("'", "\\'")
         r_code = f"""
-        load('{path_escaped}')
+        load('{path_r}')
         if (!exists('{x_object}') || !exists('{y_object}')) {{
           stop('Missing expected objects in RData')
         }}
         X <- get('{x_object}')
         Y <- get('{y_object}')
-        write.csv(X, '{x_csv_escaped}', row.names = TRUE)
-        write.csv(data.frame(y = as.integer(Y)), '{y_csv_escaped}', row.names = FALSE)
+        write.csv(X, '{x_csv_r}', row.names = TRUE)
+        write.csv(data.frame(y = as.integer(Y)), '{y_csv_r}', row.names = FALSE)
         """
         subprocess.run(["Rscript", "-e", r_code], check=True)
 
@@ -96,13 +95,7 @@ def preprocess(X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd.Series]:
 
 
 def load_data(config):
-    """Return (X, y, y_labels, omic_slices).
-
-    X: DataFrame (samples × features)
-    y: Series of integer labels in {0,1}
-    y_labels: mapping of codes to class names
-    omic_slices: single slice for compatibility with tcga interface
-    """
+    """Return (X, y, y_labels) after downloading and preprocessing."""
     ds = config["dataset"]
     base = Path(__file__).parent
     raw_path = base / "data" / "raw" / ds["raw_file"]
@@ -112,5 +105,4 @@ def load_data(config):
     X, y = preprocess(X, y)
 
     y_labels = config["outcome"]["classes"]
-    omic_slices = {"regulatory": slice(0, X.shape[1])}
-    return X, y, y_labels, omic_slices
+    return X, y, y_labels
