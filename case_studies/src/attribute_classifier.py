@@ -1,40 +1,18 @@
-"""Random forest prediction pipeline for Drosophila enhancer activity.
-
-This is the same prediction problem as S. Basu, ... B. Yu "Iterative Random
-Forest" paper. We're using a simpler SHAP-based interpretation. The overall
-implementation mimics the tcga_brca case study.
-
-  - 5-fold stratified nested CV
-  - OOB hyperparameter tuning (min_samples_leaf, max_features)
-  - final model refit on all samples. This is what we explain later.
-
-Run with:
-    python pipeline.py
-    python pipeline.py --n-reps 2
-"""
-
-import argparse
-import sys
-from pathlib import Path
+"""Fit and evaluate a classifier with nested CV, then save results."""
 
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from config import load_config
 from rf import nested_cv, fit_final
 from results import save_results
 
-from data import load_data
 
-BASE = Path(__file__).parent
-
-
-def main(n_reps=1):
-    config = load_config(BASE)
+def run(base_dir, load_data_fn, n_reps=1):
+    config = load_config(base_dir)
     seeds = config["seeds"]
 
-    data_dir = BASE / "data"
+    data_dir = base_dir / "data"
     X_path, y_path = data_dir / "X.parquet", data_dir / "y.parquet"
 
     if X_path.exists() and y_path.exists():
@@ -43,7 +21,7 @@ def main(n_reps=1):
         y_labels = config["outcome"]["classes"]
     else:
         print("Preprocessing raw data (first run) …")
-        X, y, y_labels, _ = load_data(config)
+        X, y, y_labels, _ = load_data_fn(config)
         data_dir.mkdir(exist_ok=True)
         X.to_parquet(X_path)
         y.to_frame().to_parquet(y_path)
@@ -65,14 +43,23 @@ def main(n_reps=1):
     final_model, best_params = fit_final(X, y, config, rng_final)
     print(f"Final model OOB MCC  params={best_params}")
 
-    save_results(BASE / "results", X, y, all_preds, mccs, final_model,
+    save_results(base_dir / "results", X, y, all_preds, mccs, final_model,
                  best_params, y_labels)
-    print(f"Saved final model → {BASE / 'results' / 'final_model.pkl'}")
+    print(f"Saved final model → {base_dir / 'results' / 'final_model.pkl'}")
 
 
 if __name__ == "__main__":
+    import argparse
+    import sys
+    from pathlib import Path
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n-reps", type=int, default=1,
-                        help="Number of seeds/repetitions")
+    parser.add_argument("study_dir", type=Path)
+    parser.add_argument("--n-reps", type=int, default=1)
     args = parser.parse_args()
-    main(n_reps=args.n_reps)
+
+    base_dir = args.study_dir.resolve()
+    sys.path.insert(0, str(base_dir))
+    from data import load_data
+
+    run(base_dir, load_data, n_reps=args.n_reps)
