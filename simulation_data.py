@@ -2,55 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
+import random
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-RNG_SEED_SEMANTICS = "derived_from_master_seed_via_seedsequence"
-
-
-def _stable_spawn_key(
-    dataset_type: str,
-    n: int,
-    p: int,
-    rep_index: int,
-) -> tuple[int, ...]:
-    entropy_str = f"{dataset_type}|n={int(n)}|p={int(p)}|rep={int(rep_index)}"
-    digest = hashlib.sha256(entropy_str.encode("utf-8")).digest()
-    return tuple(int.from_bytes(digest[i : i + 4], "big") for i in range(0, 16, 4))
-
-
-def derive_seed(
-    master_seed: int,
-    dataset_type: str,
-    n: int,
-    p: int,
-    rep_index: int,
-) -> int:
-    """Derive a stable per-configuration RNG seed from one master seed."""
-
-    seed_seq = np.random.SeedSequence(
-        entropy=int(master_seed),
-        spawn_key=_stable_spawn_key(dataset_type, n, p, rep_index),
-    )
-    return int(seed_seq.generate_state(1, dtype=np.uint64)[0])
-
-
-def make_rng(
-    master_seed: int,
-    dataset_type: str,
-    n: int,
-    p: int,
-    rep_index: int,
-) -> np.random.Generator:
-    """Create the RNG for one sweep configuration."""
-
-    return np.random.default_rng(
-        derive_seed(master_seed, dataset_type, n, p, rep_index)
-    )
 
 
 def make_covariance(
@@ -79,8 +36,6 @@ def make_covariance(
 
     if structure == "block":
         block_size = int(block_size)
-        if block_size < 1:
-            raise ValueError("block_size must be positive.")
         sigma = np.eye(p, dtype=np.float64)
         for start in range(0, p, block_size):
             stop = min(start + block_size, p)
@@ -90,10 +45,6 @@ def make_covariance(
                 sigma[start:stop, start:stop] = corr
                 np.fill_diagonal(sigma[start:stop, start:stop], 1.0)
         return sigma
-
-    raise ValueError(
-        "structure must be one of 'independent', 'equicorrelated', or 'block'."
-    )
 
 
 def _check_corr_bounds(corr: float, dim: int) -> None:
@@ -112,7 +63,7 @@ def generate_linear_additive_data(
     p: int,
     beta: list[float] | None = None,
     sigma: float = 1.0,
-    seed: int | np.random.SeedSequence = 0,
+    seed: int | None = None,
     corr: float = 0.0,
     structure: str = "independent",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
@@ -120,15 +71,15 @@ def generate_linear_additive_data(
 
     beta_arr = np.asarray([4.0, 4.0, 3.0, 2.0] if beta is None else beta, dtype=float)
     n, p = int(n), int(p)
-    if p < len(beta_arr):
-        raise ValueError("p must be at least len(beta).")
+    if seed is not None:
+        random.seed(int(seed))
+        np.random.seed(int(seed))
 
-    rng = np.random.default_rng(seed)
     covariance = make_covariance(p, corr=corr, structure=structure)
-    X = rng.multivariate_normal(np.zeros(p), covariance, size=n).astype(np.float64)
-    y_mean = (X[:, : len(beta_arr)] @ beta_arr).astype(np.float64)
-    epsilon = rng.normal(0.0, float(sigma), size=n)
-    y = (y_mean + epsilon).astype(np.float64)
+    X = np.random.multivariate_normal(np.zeros(p), covariance, size=n)
+    y_mean = X[:, : len(beta_arr)] @ beta_arr
+    epsilon = np.random.normal(0.0, float(sigma), size=n)
+    y = y_mean + epsilon
 
     metadata = _base_metadata(
         dataset_type="linear_additive",
@@ -150,68 +101,50 @@ def generate_linear_additive_data(
         task_type="regression",
     )
     metadata["beta"] = beta_arr.tolist()
-    return X, y, y_mean, metadata
+    return (
+        np.asarray(X, dtype=np.float64),
+        np.asarray(y, dtype=np.float64),
+        np.asarray(y_mean, dtype=np.float64),
+        metadata,
+    )
 
 
 def generate_xor_data(
     n: int,
     p: int,
-    sigma: float = 0.0,
-    seed: int | np.random.SeedSequence = 0,
-    task_type: str = "classification",
-    noise_feature_type: str | None = None,
+    seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
-    """Generate XOR classification or regression data."""
+    """Generate XOR classification data."""
 
     n, p = int(n), int(p)
-    sigma = float(sigma)
-    if p < 2:
-        raise ValueError("p must be at least 2 for XOR data.")
-    if task_type not in {"classification", "regression"}:
-        raise ValueError("task_type must be 'classification' or 'regression'.")
-    if task_type == "classification" and sigma != 0.0:
-        raise ValueError("sigma must be 0.0 for XOR classification.")
+    if seed is not None:
+        random.seed(int(seed))
+        np.random.seed(int(seed))
 
-    if noise_feature_type is None:
-        noise_feature_type = "bernoulli" if task_type == "classification" else "gaussian"
-    if noise_feature_type not in {"bernoulli", "gaussian"}:
-        raise ValueError("noise_feature_type must be 'bernoulli' or 'gaussian'.")
-
-    rng = np.random.default_rng(seed)
-    signal_features = rng.binomial(1, 0.5, size=(n, 2)).astype(np.float64)
-    if noise_feature_type == "bernoulli":
-        noise_features = rng.binomial(1, 0.5, size=(n, p - 2)).astype(np.float64)
-    else:
-        noise_features = rng.normal(0.0, 1.0, size=(n, p - 2)).astype(np.float64)
+    signal_features = np.random.binomial(1, 0.5, size=(n, 2))
+    noise_features = np.random.binomial(1, 0.5, size=(n, p - 2))
     X = np.hstack([signal_features, noise_features]).astype(np.float64)
 
     y_mean = (X[:, 0] != X[:, 1]).astype(np.float64)
-    if task_type == "classification":
-        y = y_mean.astype(np.int64)
-    else:
-        epsilon = rng.normal(0.0, sigma, size=n)
-        y = (y_mean + epsilon).astype(np.float64)
+    y = y_mean.astype(np.int64)
 
     metadata = _base_metadata(
         dataset_type="xor",
         n=n,
         p=p,
         seed=seed,
-        sigma=sigma,
+        sigma=0.0,
         relevant_features=[0, 1],
         additive_features=[],
         interaction_features=[[0, 1]],
         noise_features=list(range(2, p)),
-        data_generating_equation=(
-            "y_mean = 1{X0 != X1}; classification y = y_mean; "
-            "regression y = y_mean + epsilon"
-        ),
+        data_generating_equation="y = 1{X0 != X1}",
         covariance_structure="independent",
         corr=0.0,
         block_size=None,
-        task_type=task_type,
+        task_type="classification",
     )
-    metadata["noise_feature_type"] = noise_feature_type
+    metadata["noise_feature_type"] = "bernoulli"
     return X, y, y_mean, metadata
 
 
@@ -221,7 +154,7 @@ def generate_product_interaction_data(
     gamma: float = 3.0,
     beta_main: list[float] | None = None,
     sigma: float = 1.0,
-    seed: int | np.random.SeedSequence = 0,
+    seed: int | None = None,
     corr: float = 0.0,
     structure: str = "independent",
     include_main_effects: bool = False,
@@ -230,28 +163,20 @@ def generate_product_interaction_data(
 
     n, p = int(n), int(p)
     gamma = float(gamma)
-    if p < 2:
-        raise ValueError("p must be at least 2 for product interaction data.")
     if include_main_effects and beta_main is None:
         beta_main = [4.0, 4.0]
-    if not include_main_effects and beta_main is not None:
-        raise ValueError(
-            "beta_main was provided but include_main_effects=False; "
-            "set include_main_effects=True to use it, or omit beta_main."
-        )
-    if beta_main is not None and len(beta_main) != 2:
-        raise ValueError("beta_main must contain exactly two values.")
+    if seed is not None:
+        random.seed(int(seed))
+        np.random.seed(int(seed))
 
-    rng = np.random.default_rng(seed)
     covariance = make_covariance(p, corr=corr, structure=structure)
-    X = rng.multivariate_normal(np.zeros(p), covariance, size=n).astype(np.float64)
+    X = np.random.multivariate_normal(np.zeros(p), covariance, size=n)
     y_mean = gamma * X[:, 0] * X[:, 1]
     if include_main_effects:
         beta_main_arr = np.asarray(beta_main, dtype=float)
         y_mean = y_mean + beta_main_arr[0] * X[:, 0] + beta_main_arr[1] * X[:, 1]
-    epsilon = rng.normal(0.0, float(sigma), size=n)
-    y = (y_mean + epsilon).astype(np.float64)
-    y_mean = y_mean.astype(np.float64)
+    epsilon = np.random.normal(0.0, float(sigma), size=n)
+    y = y_mean + epsilon
 
     metadata = _base_metadata(
         dataset_type="product_interaction",
@@ -276,15 +201,20 @@ def generate_product_interaction_data(
     metadata["gamma"] = gamma
     metadata["include_main_effects"] = bool(include_main_effects)
     metadata["beta_main"] = None if beta_main is None else [float(v) for v in beta_main]
-    return X, y, y_mean, metadata
+    return (
+        np.asarray(X, dtype=np.float64),
+        np.asarray(y, dtype=np.float64),
+        np.asarray(y_mean, dtype=np.float64),
+        metadata,
+    )
 
 
-def generate_reference_linear_interaction_data(
+def generate_reference_data(
     n: int,
     p: int,
     beta: list[float] | None = None,
     sigma: float = 1.0,
-    seed: int | np.random.SeedSequence = 0,
+    seed: int | None = None,
     corr: float = 0.5,
     structure: str = "block",
     block_size: int = 2,
@@ -296,21 +226,17 @@ def generate_reference_linear_interaction_data(
         dtype=float,
     )
     n, p = int(n), int(p)
-    if p < 8:
-        raise ValueError("p must be at least 8 for reference data.")
-    if len(beta_arr) != 8:
-        raise ValueError("beta must contain exactly eight values.")
+    if seed is not None:
+        random.seed(int(seed))
+        np.random.seed(int(seed))
 
-    rng = np.random.default_rng(seed)
     covariance = make_covariance(
         p,
         corr=corr,
         structure=structure,
         block_size=block_size,
     )
-    X = rng.multivariate_normal(np.zeros(p), covariance, size=n).astype(np.float64)
-    # TODO: support non-contiguous custom block assignments if an external
-    # reference requires covariance pairs other than contiguous block pairs.
+    X = np.random.multivariate_normal(np.zeros(p), covariance, size=n)
     y_mean = (
         beta_arr[0] * X[:, 0]
         + beta_arr[1] * X[:, 1]
@@ -320,9 +246,9 @@ def generate_reference_linear_interaction_data(
         + beta_arr[5] * X[:, 4] * X[:, 5]
         + beta_arr[6] * X[:, 6]
         + beta_arr[7] * X[:, 7]
-    ).astype(np.float64)
-    epsilon = rng.normal(0.0, float(sigma), size=n)
-    y = (y_mean + epsilon).astype(np.float64)
+    )
+    epsilon = np.random.normal(0.0, float(sigma), size=n)
+    y = y_mean + epsilon
 
     additive_features = [0, 1, 4, 5, 6, 7]
     metadata = _base_metadata(
@@ -345,7 +271,12 @@ def generate_reference_linear_interaction_data(
         task_type="regression",
     )
     metadata["beta"] = beta_arr.tolist()
-    return X, y, y_mean, metadata
+    return (
+        np.asarray(X, dtype=np.float64),
+        np.asarray(y, dtype=np.float64),
+        np.asarray(y_mean, dtype=np.float64),
+        metadata,
+    )
 
 
 def save_npz_dataset(
@@ -383,12 +314,12 @@ def build_filename(
     dataset_type: str,
     n: int,
     p: int,
-    rep_index: int,
+    seed: int,
     **nondefault_kwargs: Any,
 ) -> str:
     """Build a collision-resistant filename for a simulation config."""
 
-    stem = f"{dataset_type}_n{int(n)}_p{int(p)}_seed{int(rep_index)}"
+    stem = f"{dataset_type}_n{int(n)}_p{int(p)}_seed{int(seed)}"
     extras: list[str] = []
     display_names = {
         "beta_main": "betamain",
@@ -430,7 +361,7 @@ def _base_metadata(
     dataset_type: str,
     n: int,
     p: int,
-    seed: int | np.random.SeedSequence,
+    seed: int | None,
     sigma: float,
     relevant_features: list[int],
     additive_features: list[int],
@@ -446,9 +377,7 @@ def _base_metadata(
         "dataset_type": dataset_type,
         "n": int(n),
         "p": int(p),
-        "master_seed": None,
-        "rep_index": None,
-        "seed": _metadata_seed(seed),
+        "seed": None if seed is None else int(seed),
         "sigma": float(sigma),
         "feature_indexing": "zero_based",
         "relevant_features": [int(v) for v in relevant_features],
@@ -460,11 +389,4 @@ def _base_metadata(
         "corr": float(corr),
         "block_size": None if block_size is None else int(block_size),
         "task_type": task_type,
-        "rng_seed_semantics": RNG_SEED_SEMANTICS,
     }
-
-
-def _metadata_seed(seed: int | np.random.SeedSequence) -> int:
-    if isinstance(seed, np.random.SeedSequence):
-        return int(seed.generate_state(1, dtype=np.uint64)[0])
-    return int(seed)
