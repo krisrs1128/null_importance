@@ -4,19 +4,16 @@ import hashlib
 import json
 import subprocess
 import sys
-from itertools import product
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from simulation_data import (
-    RNG_SEED_SEMANTICS,
     build_filename,
-    derive_seed,
     generate_linear_additive_data,
     generate_product_interaction_data,
-    generate_reference_linear_interaction_data,
+    generate_reference_data,
     generate_xor_data,
     load_npz_dataset,
     make_covariance,
@@ -24,33 +21,40 @@ from simulation_data import (
 )
 
 
-MASTER_SEED = 20260618
 ROOT = Path(__file__).resolve().parents[1]
+TEST_SEED = 123
 
 
-def _stamp(metadata: dict, master_seed: int, rep_index: int) -> dict:
-    metadata["master_seed"] = master_seed
-    metadata["rep_index"] = rep_index
-    return metadata
+def _digest_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _digest(array: np.ndarray) -> str:
-    return hashlib.sha256(array.tobytes()).hexdigest()
+def _run_minimal_sweep(output_dir: Path) -> None:
+    subprocess.check_call(
+        [
+            sys.executable,
+            "scripts/generate_simulation_data.py",
+            "--minimal",
+            "--seed",
+            str(TEST_SEED),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=ROOT,
+    )
 
 
 @pytest.mark.parametrize(
-    ("dataset_type", "generator", "kwargs"),
+    ("generator", "kwargs"),
     [
-        ("linear_additive", generate_linear_additive_data, {}),
-        ("xor", generate_xor_data, {}),
-        ("product_interaction", generate_product_interaction_data, {}),
+        (generate_linear_additive_data, {}),
+        (generate_xor_data, {}),
+        (generate_product_interaction_data, {}),
     ],
 )
-def test_universal_contract_and_reproducibility(dataset_type, generator, kwargs):
-    n, p, rep_index = 64, 10, 0
-    seed = derive_seed(MASTER_SEED, dataset_type, n, p, rep_index)
-    X, y, y_mean, metadata = generator(n=n, p=p, seed=seed, **kwargs)
-    metadata = _stamp(metadata, MASTER_SEED, rep_index)
+def test_generator_contract_reproducibility_and_seed_sensitivity(generator, kwargs):
+    n, p = 64, 10
+    X, y, y_mean, metadata = generator(n=n, p=p, seed=TEST_SEED, **kwargs)
 
     assert X.shape == (n, p)
     assert y.shape == (n,)
@@ -61,71 +65,53 @@ def test_universal_contract_and_reproducibility(dataset_type, generator, kwargs)
     assert np.isfinite(y_mean).all()
     assert metadata["n"] == n
     assert metadata["p"] == p
-    assert metadata["master_seed"] == MASTER_SEED
-    assert metadata["rep_index"] == rep_index
-    assert metadata["seed"] == seed
-    assert metadata["rng_seed_semantics"] == RNG_SEED_SEMANTICS
+    assert metadata["seed"] == TEST_SEED
 
-    X2, y2, y_mean2, _ = generator(n=n, p=p, seed=seed, **kwargs)
+    X2, y2, y_mean2, _ = generator(n=n, p=p, seed=TEST_SEED, **kwargs)
     assert np.array_equal(X, X2)
     assert np.array_equal(y, y2)
     assert np.array_equal(y_mean, y_mean2)
 
-    rep_seed = derive_seed(MASTER_SEED, dataset_type, n, p, rep_index + 1)
-    X_rep, _, _, _ = generator(n=n, p=p, seed=rep_seed, **kwargs)
-    assert not np.array_equal(X, X_rep)
-
-    master_seed = derive_seed(MASTER_SEED + 1, dataset_type, n, p, rep_index)
-    X_master, _, _, _ = generator(n=n, p=p, seed=master_seed, **kwargs)
-    assert not np.array_equal(X, X_master)
+    X_next, _, _, _ = generator(n=n, p=p, seed=TEST_SEED + 1, **kwargs)
+    assert not np.array_equal(X, X_next)
 
 
-def test_cross_process_seed_derivation_is_stable():
-    dataset_type, n, p, rep_index = "linear_additive", 64, 10, 0
-    seed = derive_seed(MASTER_SEED, dataset_type, n, p, rep_index)
-    X, y, y_mean, _ = generate_linear_additive_data(n=n, p=p, seed=seed)
-    expected = {
-        "seed": seed,
-        "X": _digest(X),
-        "y": _digest(y),
-        "y_mean": _digest(y_mean),
+def test_full_sweep_reproducibility_and_sweep_config(tmp_path):
+    out_a = tmp_path / "a"
+    out_b = tmp_path / "b"
+    _run_minimal_sweep(out_a)
+    _run_minimal_sweep(out_b)
+
+    files_a = sorted(path.relative_to(out_a) for path in out_a.rglob("*") if path.is_file())
+    files_b = sorted(path.relative_to(out_b) for path in out_b.rglob("*") if path.is_file())
+    assert files_a == files_b
+    assert {path: _digest_file(out_a / path) for path in files_a} == {
+        path: _digest_file(out_b / path) for path in files_b
     }
 
-    code = f"""
-import hashlib
-import json
-from simulation_data import derive_seed, generate_linear_additive_data
+    with (out_a / "sweep_config.json").open() as file:
+        config = json.load(file)
+    assert config == {
+        "seed": TEST_SEED,
+        "dataset_types": ["linear_additive", "xor", "product_interaction"],
+        "sample_sizes": [20],
+        "dimensions": [10],
+        "loop_order": "dataset_type -> n -> p",
+    }
 
-def digest(array):
-    return hashlib.sha256(array.tobytes()).hexdigest()
-
-seed = derive_seed({MASTER_SEED}, {dataset_type!r}, {n}, {p}, {rep_index})
-X, y, y_mean, _ = generate_linear_additive_data(n={n}, p={p}, seed=seed)
-print(json.dumps({{"seed": seed, "X": digest(X), "y": digest(y), "y_mean": digest(y_mean)}}))
-"""
-    observed = json.loads(
-        subprocess.check_output([sys.executable, "-c", code], cwd=ROOT, text=True)
-    )
-    assert observed == expected
-
-
-def test_derived_seeds_are_pairwise_distinct_for_sampled_grid():
-    dataset_types = ["linear_additive", "xor", "product_interaction"]
-    ns = [20, 50, 200, 500, 1000]
-    ps = [2, 4, 10, 20, 50]
-    reps = [0, 1, 2, 3, 4]
-    configs = list(product(dataset_types, ns, ps, reps))[:100]
-    seeds = [derive_seed(MASTER_SEED, d, n, p, r) for d, n, p, r in configs]
-    assert len(seeds) == 100
-    assert len(set(seeds)) == len(seeds)
+    for dataset_type in config["dataset_types"]:
+        path = out_a / dataset_type / build_filename(dataset_type, 20, 10, TEST_SEED)
+        _, _, _, metadata = load_npz_dataset(path)
+        assert metadata["seed"] == TEST_SEED
 
 
 def test_save_load_round_trip(tmp_path):
-    dataset_type, n, p, rep_index = "product_interaction", 32, 10, 0
-    seed = derive_seed(MASTER_SEED, dataset_type, n, p, rep_index)
-    X, y, y_mean, metadata = generate_product_interaction_data(n=n, p=p, seed=seed)
-    metadata = _stamp(metadata, MASTER_SEED, rep_index)
-    path = tmp_path / build_filename(dataset_type, n, p, rep_index)
+    X, y, y_mean, metadata = generate_product_interaction_data(
+        n=32,
+        p=10,
+        seed=TEST_SEED,
+    )
+    path = tmp_path / build_filename("product_interaction", 32, 10, TEST_SEED)
 
     save_npz_dataset(X, y, y_mean, metadata, path)
     X2, y2, y_mean2, metadata2 = load_npz_dataset(path)
@@ -153,13 +139,11 @@ def test_make_covariance_contracts():
 
 def test_linear_additive_formula_and_metadata():
     beta = [1.0, -2.0, 0.5]
-    n, p = 50, 6
-    seed = derive_seed(MASTER_SEED, "linear_additive", n, p, 0)
     X, _, y_mean, metadata = generate_linear_additive_data(
-        n=n,
-        p=p,
+        n=50,
+        p=6,
         beta=beta,
-        seed=seed,
+        seed=TEST_SEED,
     )
     assert metadata["relevant_features"] == [0, 1, 2]
     assert metadata["additive_features"] == [0, 1, 2]
@@ -167,13 +151,12 @@ def test_linear_additive_formula_and_metadata():
     assert metadata["noise_features"] == [3, 4, 5]
     assert np.allclose(y_mean, X[:, : len(beta)] @ np.asarray(beta))
     with pytest.raises(ValueError, match="p must be at least len"):
-        generate_linear_additive_data(n=10, p=2, beta=beta, seed=seed)
+        generate_linear_additive_data(n=10, p=2, beta=beta, seed=TEST_SEED)
 
 
-def test_xor_classification_and_regression_modes():
+def test_xor_classification_data():
     n, p = 1000, 5
-    seed = derive_seed(MASTER_SEED, "xor", n, p, 0)
-    X, y, y_mean, metadata = generate_xor_data(n=n, p=p, seed=seed)
+    X, y, y_mean, metadata = generate_xor_data(n=n, p=p, seed=TEST_SEED)
     assert y.dtype == np.int64
     assert set(np.unique(y)).issubset({0, 1})
     assert np.array_equal(y_mean, (X[:, 0] != X[:, 1]).astype(float))
@@ -181,35 +164,19 @@ def test_xor_classification_and_regression_modes():
     assert metadata["additive_features"] == []
     assert metadata["interaction_features"] == [[0, 1]]
     assert metadata["noise_feature_type"] == "bernoulli"
-
-    sigma = 1.25
-    reg_seed = derive_seed(MASTER_SEED, "xor", n, p, 1)
-    X_reg, y_reg, y_mean_reg, metadata_reg = generate_xor_data(
-        n=n,
-        p=p,
-        seed=reg_seed,
-        task_type="regression",
-        sigma=sigma,
-    )
-    assert y_reg.dtype == np.float64
-    assert np.isclose(np.std(y_reg - y_mean_reg), sigma, rtol=0.2)
-    assert np.array_equal(y_mean_reg, (X_reg[:, 0] != X_reg[:, 1]).astype(float))
-    assert metadata_reg["noise_feature_type"] == "gaussian"
-    assert not np.isin(X_reg[:, 2:], [0.0, 1.0]).all()
+    assert metadata["task_type"] == "classification"
+    assert metadata["sigma"] == 0.0
 
     with pytest.raises(ValueError, match="at least 2"):
         generate_xor_data(n=10, p=1)
-    with pytest.raises(ValueError, match="sigma must be 0.0"):
-        generate_xor_data(n=10, p=2, sigma=0.1, task_type="classification")
 
 
 def test_product_interaction_formula_modes():
     n, p = 80, 6
-    seed = derive_seed(MASTER_SEED, "product_interaction", n, p, 0)
     X, _, y_mean, metadata = generate_product_interaction_data(
         n=n,
         p=p,
-        seed=seed,
+        seed=TEST_SEED,
         gamma=2.5,
     )
     assert metadata["additive_features"] == []
@@ -219,7 +186,7 @@ def test_product_interaction_formula_modes():
     X_default, _, y_mean_default, metadata_default = generate_product_interaction_data(
         n=n,
         p=p,
-        seed=seed,
+        seed=TEST_SEED,
         include_main_effects=True,
     )
     assert metadata_default["additive_features"] == [0, 1]
@@ -234,7 +201,7 @@ def test_product_interaction_formula_modes():
     X_explicit, _, y_mean_explicit, _ = generate_product_interaction_data(
         n=n,
         p=p,
-        seed=seed,
+        seed=TEST_SEED,
         gamma=1.5,
         include_main_effects=True,
         beta_main=[1.0, -2.0],
@@ -252,12 +219,10 @@ def test_product_interaction_formula_modes():
 
 
 def test_reference_linear_interaction_formula():
-    n, p = 40, 9
-    seed = derive_seed(MASTER_SEED, "reference_linear_interaction", n, p, 0)
-    X, _, y_mean, metadata = generate_reference_linear_interaction_data(
-        n=n,
-        p=p,
-        seed=seed,
+    X, _, y_mean, metadata = generate_reference_data(
+        n=40,
+        p=9,
+        seed=TEST_SEED,
     )
     beta = np.asarray(metadata["beta"])
     expected = (
@@ -277,14 +242,11 @@ def test_reference_linear_interaction_formula():
     assert metadata["noise_features"] == [8]
     assert np.allclose(y_mean, expected)
     with pytest.raises(ValueError, match="at least 8"):
-        generate_reference_linear_interaction_data(n=10, p=7)
+        generate_reference_data(n=10, p=7)
 
 
 def test_build_filename_encodes_nondefault_parameters():
-    assert (
-        build_filename("xor", 200, 10, 0)
-        == "xor_n200_p10_seed0.npz"
-    )
+    assert build_filename("xor", 200, 10, 0) == "xor_n200_p10_seed0.npz"
     assert (
         build_filename(
             "product_interaction",
