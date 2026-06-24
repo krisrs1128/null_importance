@@ -1,0 +1,64 @@
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+data:
+  parquet_dir: ../tcga_brca/data
+  model_dir: ../tcga_brca/results
+
+methods:
+  mdi: true
+  permutation: false
+  treeshap: false
+  kernelshap: true
+  minshap: false
+  loco: true
+  correlation: true
+  knockoffs: true
+  pdp_variance: true
+
+permutation:
+  n_repeats: 10
+
+minshap:
+  n_samples: 10
+  n_orderings: 20
+  n_background: 50
+
+kernelshap:
+  n_samples: 10
+  n_coalitions: 20
+  n_background: 50
+
+loco:
+  top_k: 30
+
+pdp:
+  grid_resolution: 20
+
+knockoffs:
+  fdr: 0.1
+  max_features: 500
+
+rf:
+  n_trees: 50
+  min_samples_leaf: [5, 10]
+
+vignettes:
+  n_features: 10
+
+seed: 895404
+
+categories:
+  mdi: marginal
+  permutation: risk
+  treeshap: risk
+  minshap: conditional
+  loco: risk
+  correlation: marginal
+  knockoffs: conditional
+  pdp_variance: functional
+  kernelshap: marginal
