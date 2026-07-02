@@ -11,33 +11,39 @@ data:
 
 methods:
   mdi: true
-  permutation: false
-  treeshap: false
+  permutation: true
+  treeshap: true
   kernelshap: true
-  minshap: false
+  minshap: true
   loco: true
   correlation: true
   knockoffs: true
   pdp_variance: true
+  integrated_gradients: true
 
 permutation:
-  n_repeats: 10
+  n_repeats: 100
 
 minshap:
   n_samples: 10
-  n_orderings: 20
-  n_background: 50
+  n_orderings: 100
+  n_background: 100
 
 kernelshap:
   n_samples: 10
-  n_coalitions: 20
-  n_background: 50
+  n_coalitions: 100
+  n_background: 100
 
 loco:
-  top_k: 30
+  top_k: 100
 
 pdp:
   grid_resolution: 20
+
+integrated_gradients:
+  n_samples: 10
+  n_steps: 64
+  eps: 1e-5
 
 knockoffs:
   fdr: 0.1
@@ -48,7 +54,7 @@ rf:
   min_samples_leaf: [5, 10]
 
 vignettes:
-  n_features: 10
+  n_features: 100
 
 seed: 895404
 
@@ -62,3 +68,4 @@ categories:
   knockoffs: conditional
   pdp_variance: functional
   kernelshap: marginal
+  integrated_gradients: functional
