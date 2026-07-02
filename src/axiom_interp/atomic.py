@@ -5,7 +5,16 @@ import numpy as np
 
 
 def _grad(f, point: np.ndarray, eps: float = 1e-5) -> np.ndarray:
-    """Finite-difference approximation of the gradient of a scalar f."""
+    """Finite-difference approximation of the gradient of a scalar f.
+    
+    Args:
+        f: scalar function to differentiate
+        point: input point at which to compute gradient
+        eps: step size for finite differences (can be configured per feature)
+    
+    Returns:
+        gradient vector at the given point
+    """
     d = len(point)
     g = np.zeros(d)
     for j in range(d):
@@ -38,23 +47,28 @@ class MarginalContribution(AtomicStatistic):
 
 
 class PathIntegratedGradient(AtomicStatistic):
-    """(x_j - x0_j) * df/dx_j along the path from x0 to x."""
+    """(x_j - x0_j) * df/dx_j along the path from x0 to x.
+    
+    Integrated Gradients computes the path integral of gradients from a baseline
+    to the input point, approximating the feature attribution.
+    """
 
-    def __init__(self, baseline: np.ndarray):
+    def __init__(self, baseline: np.ndarray, eps: float = 1e-5):
         self.baseline = np.asarray(baseline, dtype=float)
+        self.eps = eps
 
     def compute_all(self, f, intervention, elements, x) -> dict:
         x = np.asarray(x, dtype=float)
         diff = x - self.baseline
         data = {j: [] for j in range(len(x))}
         for alpha in elements:
-            g = _grad(f, self.baseline + alpha * diff)
+            g = _grad(f, self.baseline + alpha * diff, eps=self.eps)
             for j in range(len(x)):
                 data[j].append(diff[j] * g[j])
         return {j: np.asarray(v) for j, v in data.items()}
 
     def __repr__(self):
-        return f"PathIntegratedGradient(baseline={np.round(self.baseline, 4).tolist()})"
+        return f"PathIntegratedGradient(baseline={np.round(self.baseline, 4).tolist()}, eps={self.eps})"
 
 
 class AblationDelta(AtomicStatistic):

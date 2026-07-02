@@ -157,3 +157,25 @@ def pdp_variance(model, X, feature_names, grid_resolution):
             log.info(f"  pdp_variance [{j + 1}/{X.shape[1]}]")
 
     return pd.Series(scores, index=feature_names, name="pdp_variance")
+
+
+@register("integrated_gradients")
+def integrated_gradients_importance(model, X, feature_names, ig_cfg, seed, rng):
+    n_samples = min(ig_cfg["n_samples"], X.shape[0])
+    sample_idx = rng.choice(X.shape[0], n_samples, replace=False)
+
+    # Use mean of data as baseline for tabular data
+    baseline = np.mean(X, axis=0)
+    explainer = presets.integrated_gradients(baseline, ig_cfg["n_steps"], eps=ig_cfg.get("eps", 1e-5))
+    f = lambda batch: model.predict_proba(batch)[:, 1]
+
+    attr_matrix = np.zeros((n_samples, X.shape[1]))
+    for i, idx in enumerate(sample_idx):
+        res = explainer.explain(f, X[idx])
+        attr_matrix[i] = res.as_array()
+        if (i + 1) % 10 == 0 or i == 0:
+            log.info(f"  integrated_gradients [{i + 1}/{n_samples}]")
+
+    return pd.Series(
+        np.mean(np.abs(attr_matrix), axis=0), index=feature_names, name="integrated_gradients"
+    )

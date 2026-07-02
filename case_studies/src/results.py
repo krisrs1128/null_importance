@@ -2,11 +2,10 @@
 
 import pickle
 from pathlib import Path
-
 import pandas as pd
 
 
-def save_results(results_dir, X, y, all_preds, mccs, final_model,
+def save_results(results_dir, X, y, all_preds, mccs, aucs, final_model,
                  best_params, y_labels):
     """Write standard pipeline outputs.
 
@@ -19,6 +18,7 @@ def save_results(results_dir, X, y, all_preds, mccs, final_model,
     all_preds : list of ndarray
         Per-repetition predictions; first rep written to CSV.
     mccs : list of float
+    aucs : list of float
     final_model : RandomForestClassifier
     best_params : tuple of (min_samples_leaf, max_features)
     y_labels : list of str
@@ -32,6 +32,7 @@ def save_results(results_dir, X, y, all_preds, mccs, final_model,
     ).to_csv(results_dir / "cv_predictions.csv", index_label="sample_id")
 
     pd.Series(mccs, name="mcc").to_csv(results_dir / "mccs.csv", index=False)
+    pd.Series(aucs, name="auc").to_csv(results_dir / "auc.csv", index=False)
 
     with open(results_dir / "final_model.pkl", "wb") as f:
         pickle.dump({
