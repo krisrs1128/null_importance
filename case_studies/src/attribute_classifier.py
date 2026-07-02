@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import roc_auc_score
 
 from config import load_config
 from rf import nested_cv, fit_final
@@ -29,22 +30,21 @@ def run(base_dir, load_data_fn, n_reps=1):
     print(f"Dataset: {X.shape[0]} samples × {X.shape[1]} features")
     print(f"Classes: {y_labels}  counts: {dict(y.value_counts())}\n")
 
-    mccs, all_preds = [], []
+    mccs, aucs, all_preds = [], [], []
     for i, seed in enumerate(seeds[:n_reps]):
+        # compute MCC and AUC
         rng = np.random.default_rng(seed)
         preds, mcc, fold_params = nested_cv(X, y, config, rng)
-        mccs.append(mcc)
-        all_preds.append(preds)
-        print(f"Rep {i + 1:2d}  seed={seed}  MCC={mcc:.4f}  fold_params={fold_params}")
+        auc = roc_auc_score(y, preds)
 
-    print(f"\nMean MCC over {n_reps} rep(s): {np.mean(mccs):.4f} ± {np.std(mccs):.4f}")
+        mccs.append(mcc)
+        aucs.append(auc)
+        all_preds.append(preds)
+        print(f"Rep {i + 1:2d}  seed={seed}  MCC={mcc:.4f}  AUC={auc:.4f}  fold_params={fold_params}")
 
     rng_final = np.random.default_rng(seeds[0])
     final_model, best_params = fit_final(X, y, config, rng_final)
-    print(f"Final model OOB MCC  params={best_params}")
-
-    save_results(base_dir / "results", X, y, all_preds, mccs, final_model,
-                 best_params, y_labels)
+    save_results(base_dir / "results", X, y, all_preds, mccs, aucs, final_model, best_params, y_labels)
     print(f"Saved final model → {base_dir / 'results' / 'final_model.pkl'}")
 
 

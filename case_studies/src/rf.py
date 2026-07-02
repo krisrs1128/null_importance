@@ -2,7 +2,7 @@
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import matthews_corrcoef
+from sklearn.metrics import matthews_corrcoef, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
 
