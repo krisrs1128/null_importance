@@ -9,3 +9,4 @@ case_studies/sweep_tabular/outputs/*
 case_studies/sweep_tabular/results/*
 outputs/*
 docs/*
+*DS_store

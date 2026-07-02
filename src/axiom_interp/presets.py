@@ -36,11 +36,21 @@ def baseline_shap(baseline, n_orderings=200, seed=0) -> Explainer:
     )
 
 
-def integrated_gradients(baseline, n_steps=64) -> Explainer:
+def integrated_gradients(baseline, n_steps=64, eps=1e-5) -> Explainer:
+    """Integrated Gradients explainer.
+    
+    Args:
+        baseline: baseline/reference point for integration
+        n_steps: number of interpolation steps along the path
+        eps: step size for finite-difference gradient approximation
+    
+    Returns:
+        Explainer configured for integrated gradients
+    """
     return Explainer(
         index=PathSteps(n_steps),
         intervention=BaselineMask(baseline),  # unused by the atomic
-        atomic=PathIntegratedGradient(baseline),
+        atomic=PathIntegratedGradient(baseline, eps=eps),
         aggregator=Mean(),
     )
 
