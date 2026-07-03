@@ -3,8 +3,10 @@
 case_studies/tcga_brca/data/*
 case_studies/tcga_brca/GDCdata/*
 case_studies/tcga_brca/results/*
+case_studies/tcga_brca/outputs/*
 case_studies/drosophila/results/*
 case_studies/drosophila/data/*
+case_studies/sweep_tabular/data/*
 case_studies/sweep_tabular/outputs/*
 case_studies/sweep_tabular/results/*
 outputs/*
