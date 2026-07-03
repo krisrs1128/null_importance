@@ -6,8 +6,8 @@ hydra:
     chdir: false
 
 data:
-  parquet_dir: ../tcga_brca/data
-  model_dir: ../tcga_brca/results
+  parquet_dir: data
+  model_dir: results
 
 methods:
   mdi: true

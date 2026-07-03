@@ -70,7 +70,7 @@ def _save_vignette_data(results_dir, X_df, y, model, feature_names, matrix, cfg)
     log.info(f"Saved vignette data for {len(top_features)} features")
 
 
-@hydra.main(version_base=None, config_path=".", config_name="config")
+@hydra.main(version_base=None, config_path=".", config_name="importance")
 def main(cfg: DictConfig):
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
 

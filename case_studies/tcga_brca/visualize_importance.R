@@ -9,9 +9,9 @@ library(glue)
 
 # --- Paths & config ----------------------------------------------------------
 
-base <- here("case_studies", "sweep_tabular")
+base <- here("case_studies", "tcga_brca")
 res <- path(base, "results")
-cfg <- yaml::read_yaml(path(base, "config.yaml"))
+cfg <- yaml::read_yaml(path(base, "importance.yaml"))
 
 categories <- tibble(
     method = names(cfg$categories),
