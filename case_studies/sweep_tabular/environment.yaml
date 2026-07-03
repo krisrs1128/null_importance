@@ -1,0 +1,16 @@
+name: ni_case_studies
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy<2
+  - pandas
+  - scikit-learn
+  - scipy
+  - pip:
+      - hydra-core
+      - omegaconf
+      - shap
+      - knockpy
