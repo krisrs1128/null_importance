@@ -12,3 +12,5 @@ case_studies/sweep_tabular/results/*
 outputs/*
 docs/*
 *DS_store
+*.html
+*_files*

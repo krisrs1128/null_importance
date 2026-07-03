@@ -1,0 +1,216 @@
+---
+title: "Sanity Checks for Synthetic Data Generation"
+format: html
+execute:
+  echo: false
+  warning: false
+  message: false
+fig-width: 10
+fig-height: 4
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(patchwork)
+source("../src/R/sanity_check_helpers.R")
+
+# color palettes
+palette_overall <- c(
+    signal = "#1f77b4",
+    null = "#d3d3d3",
+    accent_orange = "#ff7f0e",
+    accent_red = "#e74c3c"
+)
+palette_quantiles <- c("#d73027", "#fee090", "#1a9850")
+sample_sizes <- c(50, 500, 5000)
+
+# Apply theme globally with increased font sizes
+theme_set(
+    theme_classic() +
+        theme(
+            plot.title = element_text(size = 14, face = "bold", margin = margin(b = 8)),
+            axis.title = element_text(size = 13),
+            axis.text = element_text(size = 12),
+            legend.position = "right",
+            legend.title = element_text(size = 12),
+            legend.text = element_text(size = 11),
+            panel.grid.major.y = element_line(color = "#f0f0f0", size = 0.3),
+            strip.text = element_text(size = 12, face = "bold")
+        )
+)
+```
+
+## Linear Additive
+
+**DGP:** logit(Y) = β(x₁ + x₂ + ...)
+
+```{r linear_additive_simple}
+dat_500 <- read_dataset("linear_additive", 500)
+features <- c("x1", "x2", "noise_1")
+print(correlation_table(dat_500, features), digits = 3)
+```
+
+**Marginal relationship (n=500):**
+
+```{r linear_additive_scatter, fig.width=14, fig.height=4.5}
+compose_scatter_panels(dat_500,
+    x_plain1 = "x1", x_binned = "x1", bin_feat = "x2",
+    x_plain2 = "noise_1", palette_quantiles = palette_quantiles
+)
+```
+
+**Across sample sizes:**
+
+```{r linear_additive_facet, fig.width=14, fig.height=5}
+plot_facet_across_n(
+    "linear_additive", features,
+    classify = ~ ifelse(.x == "noise_1", "Null", "Signal"),
+    fill_values = c(Signal = palette_overall["signal"], Null = palette_overall["null"]),
+    ns = sample_sizes
+)
+```
+
+---
+
+## XOR
+
+**DGP:** logit(Y) = −γ·x₁·x₂, x_i ∈ {−1, +1}
+
+```{r xor_simple}
+dat_500 <- read_dataset("xor", 500)
+features <- c("x1", "x2", "x3", "x4", "noise_1")
+print(correlation_table(dat_500, features), digits = 3)
+```
+
+**Marginal relationship (n=500)**
+
+```{r xor_scatter, fig.width=14, fig.height=4.5}
+compose_scatter_panels(dat_500,
+    x_plain1 = "x1", x_binned = "x1", bin_feat = "x2",
+    x_plain2 = "noise_1", palette_quantiles = palette_quantiles
+)
+```
+
+**Across sample sizes:**
+
+```{r xor_facet, fig.width=14, fig.height=5}
+plot_facet_across_n(
+    "xor", features,
+    classify = ~ ifelse(.x == "noise_1", "Null", "Signal"),
+    fill_values = c(Signal = palette_overall["signal"], Null = palette_overall["null"]),
+    ns = sample_sizes
+)
+```
+
+---
+
+## Product Interaction
+
+**DGP:** logit(Y) = γ(x₁x₂ + x₃x₄ + ...)
+
+```{r product_simple}
+dat_500 <- read_dataset("product_interaction", 500)
+features <- c("x1", "x2", "x3", "x4", "noise_1")
+print(correlation_table(dat_500, features), digits = 3)
+```
+
+**Marginal relationship (n=500):**
+
+```{r product_scatter, fig.width=14, fig.height=4.5}
+compose_scatter_panels(dat_500,
+    x_plain1 = "x1", x_binned = "x1", bin_feat = "x2",
+    x_plain2 = "noise_1", palette_quantiles = palette_quantiles
+)
+```
+
+**Across sample sizes:**
+
+```{r product_facet, fig.width=14, fig.height=5}
+plot_facet_across_n(
+    "product_interaction", features,
+    classify = ~ ifelse(.x == "noise_1", "Null", "Signal"),
+    fill_values = c(Signal = palette_overall["signal"], Null = palette_overall["null"]),
+    ns = sample_sizes
+)
+```
+
+---
+
+## Dependent Features
+
+**DGP:** logit(Y) = γ(z₁ + z₂ + ...), with x₁ = z₁, x₂ = z₁ + ε (and similarly x₃, x₄)
+
+In the plots below, x1, x3 are non-null anchors while x2, x4 are conditionally
+null proxies.
+
+```{r dependent_simple}
+dat_500 <- read_dataset("dependent_features", 500)
+features <- c("x1", "x2", "x3", "x4", "noise_1")
+print(correlation_table(dat_500, features), digits = 3)
+```
+
+**Marginal relationship (n=500)**
+
+```{r dependent_scatter, fig.width=14, fig.height=4.5}
+compose_scatter_panels(dat_500,
+    x_plain1 = "x1", x_binned = "x1", bin_feat = "x2",
+    x_plain2 = "noise_1", palette_quantiles = palette_quantiles
+)
+```
+
+**Across sample sizes:**
+
+```{r dependent_facet, fig.width=14, fig.height=5}
+plot_facet_across_n(
+    "dependent_features", features,
+    classify = ~ case_when(
+        .x %in% c("x1", "x3") ~ "Anchor",
+        .x %in% c("x2", "x4") ~ "Proxy (cond. null)",
+        TRUE ~ "Null"
+    ),
+    fill_values = c(
+        Anchor = palette_overall["signal"],
+        `Proxy (cond. null)` = palette_overall["accent_orange"],
+        Null = palette_overall["null"]
+    ),
+    ns = sample_sizes
+)
+```
+
+---
+
+## Confounding
+
+**DGP:** logit(Y) = γ(z₁ + z₂ + ...), with x_j = z_j + ε (z_j unobserved)
+
+The idea is that intervening on x_j would lead to no change in Y, even though
+the variables are marginally and conditionally nonnull
+
+```{r confounding_simple}
+dat_500 <- read_dataset("confounding", 500)
+features <- c("x1", "x2", "noise_1")
+print(correlation_table(dat_500, features), digits = 3)
+```
+
+**Marginal relationship (n=500):**
+
+```{r confounding_scatter, fig.width=14, fig.height=4.5}
+compose_scatter_panels(dat_500,
+    x_plain1 = "x1", x_binned = "x1", bin_feat = "x2",
+    x_plain2 = "noise_1", palette_quantiles = palette_quantiles
+)
+```
+
+**Across sample sizes:**
+
+```{r confounding_facet, fig.width=14, fig.height=5}
+plot_facet_across_n(
+    "confounding", features,
+    classify = ~ ifelse(.x == "noise_1", "Null", "Causally null\n(obs. assoc.)"),
+    fill_values = c(
+        Null = palette_overall["null"],
+        `Causally null\n(obs. assoc.)` = palette_overall["signal"]
+    ),
+    ns = sample_sizes
+)
+```
