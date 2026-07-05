@@ -1,0 +1,262 @@
+---
+title: "Sanity Checks for Synthetic Data Generation"
+format: html
+execute:
+  echo: false
+  warning: false
+  message: false
+fig-width: 10
+fig-height: 4
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(patchwork)
+source("../src/R/sanity_check_helpers.R")
+
+# color palettes
+palette_overall <- c(
+    signal = "#1f77b4",
+    null = "#d3d3d3",
+    accent_orange = "#ff7f0e",
+    accent_red = "#e74c3c"
+)
+palette_quantiles <- c("#d73027", "#fee090", "#1a9850")
+sample_sizes <- c(50, 500, 5000)
+
+# Apply theme globally with increased font sizes
+theme_set(
+    theme_classic() +
+        theme(
+            plot.title = element_text(size = 14, face = "bold", margin = margin(b = 8)),
+            axis.title = element_text(size = 13),
+            axis.text = element_text(size = 12),
+            legend.position = "right",
+            legend.title = element_text(size = 12),
+            legend.text = element_text(size = 11),
+            panel.grid.major.y = element_line(color = "#f0f0f0", size = 0.3),
+            strip.text = element_text(size = 12, face = "bold")
+        )
+)
+```
+
+Click the tabs to switch between regression and classification.
+
+## Linear Additive
+
+**DGP:** E[Y|x] = β(x₁ + x₂ + ...)
+
+```{r linear_additive_setup, include=FALSE}
+la_features <- c("x1", "x2", "noise_1")
+la_classify <- ~ ifelse(.x == "noise_1", "Null", "Signal")
+la_fill <- c(Signal = palette_overall["signal"], Null = palette_overall["null"])
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r linear_additive_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("linear_additive", "classification", la_features)
+```
+
+```{r linear_additive_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("linear_additive", "classification", la_features,
+    classify = la_classify, fill_values = la_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r linear_additive_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("linear_additive", "regression", la_features)
+```
+
+```{r linear_additive_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("linear_additive", "regression", la_features,
+    classify = la_classify, fill_values = la_fill, ns = sample_sizes
+)
+```
+
+:::
+
+---
+
+## XOR
+
+**DGP:** E[Y|x] = −γ·prod(sign(x₁), sign(x₂), ...), x_i ∈ U[−1,1]
+
+I realize that the "signal" variables are uniform while the nulls are gaussian.
+I don't think it makes a difference conceptually, but we might want to revise to
+enforce consistency.
+
+```{r xor_setup, include=FALSE}
+xor_features <- c("x1", "x2", "x3", "x4", "noise_1")
+xor_classify <- ~ ifelse(.x == "noise_1", "Null", "Signal")
+xor_fill <- c(Signal = palette_overall["signal"], Null = palette_overall["null"])
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r xor_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("xor", "classification", xor_features)
+```
+
+```{r xor_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("xor", "classification", xor_features,
+    classify = xor_classify, fill_values = xor_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r xor_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("xor", "regression", xor_features)
+```
+
+```{r xor_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("xor", "regression", xor_features,
+    classify = xor_classify, fill_values = xor_fill, ns = sample_sizes
+)
+```
+
+:::
+
+---
+
+## Product Interaction
+
+**DGP:** E[Y|x] = γ(x₁x₂ + x₃x₄ + ...)
+
+```{r product_setup, include=FALSE}
+product_features <- c("x1", "x2", "x3", "x4", "noise_1")
+product_classify <- ~ ifelse(.x == "noise_1", "Null", "Signal")
+product_fill <- c(Signal = palette_overall["signal"], Null = palette_overall["null"])
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r product_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("product_interaction", "classification", product_features)
+```
+
+```{r product_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("product_interaction", "classification", product_features,
+    classify = product_classify, fill_values = product_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r product_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("product_interaction", "regression", product_features)
+```
+
+```{r product_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("product_interaction", "regression", product_features,
+    classify = product_classify, fill_values = product_fill, ns = sample_sizes
+)
+```
+
+:::
+
+---
+
+## Dependent Features
+
+**DGP:** E[Y|z] = γ(z₁ + z₂ + ...), with x₁ = z₁, x₂ = z₁ + ε (and similarly x₃, x₄)
+
+In the plots below, x1, x3 are non-null anchors while x2, x4 are conditionally
+null proxies.
+
+```{r dependent_setup, include=FALSE}
+dependent_features_cols <- c("x1", "x2", "x3", "x4", "noise_1")
+dependent_classify <- ~ case_when(
+    .x %in% c("x1", "x3") ~ "Anchor",
+    .x %in% c("x2", "x4") ~ "Proxy (cond. null)",
+    TRUE ~ "Null"
+)
+dependent_fill <- c(
+    Anchor = palette_overall["signal"],
+    `Proxy (cond. null)` = palette_overall["accent_orange"],
+    Null = palette_overall["null"]
+)
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r dependent_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("dependent_features", "classification", dependent_features_cols)
+```
+
+```{r dependent_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("dependent_features", "classification", dependent_features_cols,
+    classify = dependent_classify, fill_values = dependent_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r dependent_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("dependent_features", "regression", dependent_features_cols)
+```
+
+```{r dependent_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("dependent_features", "regression", dependent_features_cols,
+    classify = dependent_classify, fill_values = dependent_fill, ns = sample_sizes
+)
+```
+
+:::
+
+---
+
+## Confounding
+
+**DGP:** E[Y|z] = γ(z₁ + z₂ + ...), with x_j = z_j + ε (z_j unobserved)
+
+The idea is that intervening on x_j would lead to no change in Y, even though
+the variables are marginally and conditionally nonnull
+
+```{r confounding_setup, include=FALSE}
+confounding_features <- c("x1", "x2", "noise_1")
+confounding_classify <- ~ ifelse(.x == "noise_1", "Null", "Causally null\n(obs. assoc.)")
+confounding_fill <- c(
+    Null = palette_overall["null"],
+    `Causally null\n(obs. assoc.)` = palette_overall["signal"]
+)
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r confounding_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("confounding", "classification", confounding_features)
+```
+
+```{r confounding_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("confounding", "classification", confounding_features,
+    classify = confounding_classify, fill_values = confounding_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r confounding_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("confounding", "regression", confounding_features)
+```
+
+```{r confounding_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("confounding", "regression", confounding_features,
+    classify = confounding_classify, fill_values = confounding_fill, ns = sample_sizes
+)
+```
+
+:::

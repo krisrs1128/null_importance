@@ -13,17 +13,23 @@ dimensions:
 datasets:
   linear_additive:
     beta: 4.0   # same across all n_nonnull signal features
+    sigma_y: 1.0
   xor:
     gamma: 3.0
+    sigma_y: 1.0
   product_interaction:
     gamma: 3.0
+    sigma_y: 1.0
   dependent_features:
     noise_scale: 0.3
     gamma: 3.0
+    sigma_y: 1.0
   confounding:
     noise_scale: 0.3
     gamma: 3.0
+    sigma_y: 1.0
 
+response_types: [classification, regression]
 sample_sizes: [50, 500, 5000]
 seed: 2026
 
