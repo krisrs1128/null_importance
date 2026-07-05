@@ -37,16 +37,18 @@ def main(cfg: DictConfig):
     data_dir = _script_dir / "data"
     data_dir.mkdir(exist_ok=True)
 
-    # loop over datasets and sample sizes to generate data
+    # loop over datasets, response types, and sample sizes to generate data
     for name, fn in DATASETS.items():
-        dataset_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
-        for n in cfg.sample_sizes:
-            X, y, _, meta = fn(n, rng, dataset_cfg)
-            out = X.copy()
-            out["y"] = y
-            path = data_dir / f"{name}_{n}.csv"
-            out.to_csv(path, index=False)
-            log.info(f"Wrote {path} ({n} rows); null_type={meta['null_type']}")
+        base_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
+        for rt in cfg.response_types:
+            dataset_cfg = {**base_cfg, "response_type": rt}
+            for n in cfg.sample_sizes:
+                X, y, _, meta = fn(n, rng, dataset_cfg)
+                out = X.copy()
+                out["y"] = y
+                path = data_dir / f"{name}_{n}_{rt}.csv"
+                out.to_csv(path, index=False)
+                log.info(f"Wrote {path} ({n} rows, {rt}); null_type={meta['null_type']}")
 
     # Write run metadata for reproducibility
     metadata = {
