@@ -9,7 +9,7 @@ from rf import fit_final
 from axiom_interp import presets
 from sklearn.metrics import matthews_corrcoef as mcc_score
 from sklearn.inspection import permutation_importance as pi
-from scipy.stats import pointbiserialr
+from scipy.stats import pointbiserialr, pearsonr
 from sklearn.inspection import partial_dependence as pd_func
 
 log = logging.getLogger(__name__)
@@ -30,10 +30,11 @@ def mdi(model, feature_names):
 
 
 @register("permutation")
-def permutation(model, X, y, feature_names, n_repeats, rng):
+def permutation(model, X, y, feature_names, n_repeats, rng, response_type):
+    scoring = "matthews_corrcoef" if response_type == "classification" else "r2"
     result = pi(
         model, X, y,
-        scoring="matthews_corrcoef",
+        scoring=scoring,
         n_repeats=n_repeats,
         random_state=int(rng.integers(1, 2**31)),
         n_jobs=-1,
@@ -50,7 +51,7 @@ def treeshap(model, X, feature_names):
 
 
 @register("minshap")
-def minshap_importance(model, X, feature_names, mcfg, seed, rng):
+def minshap_importance(model, X, feature_names, mcfg, seed, rng, response_type):
     n_samples = min(mcfg["n_samples"], X.shape[0])
     sample_idx = rng.choice(X.shape[0], n_samples, replace=False)
 
@@ -58,7 +59,10 @@ def minshap_importance(model, X, feature_names, mcfg, seed, rng):
     bg = X[rng.choice(X.shape[0], n_bg, replace=False)]
 
     explainer = presets.minshap(bg, mcfg["n_orderings"], seed)
-    f = lambda batch: model.predict_proba(batch)[:, 1]
+    if response_type == "classification":
+        f = lambda batch: model.predict_proba(batch)[:, 1]
+    else:
+        f = lambda batch: model.predict(batch)
 
     attr_matrix = np.zeros((n_samples, X.shape[1]))
     for i, idx in enumerate(sample_idx):
@@ -73,7 +77,7 @@ def minshap_importance(model, X, feature_names, mcfg, seed, rng):
 
 
 @register("kernelshap")
-def kernelshap(model, X, feature_names, kshap_cfg, rng):
+def kernelshap(model, X, feature_names, kshap_cfg, rng, response_type):
     n_samples = min(kshap_cfg["n_samples"], X.shape[0])
     sample_idx = rng.choice(X.shape[0], n_samples, replace=False)
     X_sample = X[sample_idx]
@@ -81,7 +85,10 @@ def kernelshap(model, X, feature_names, kshap_cfg, rng):
     n_bg = min(kshap_cfg["n_background"], X.shape[0])
     bg = X[rng.choice(X.shape[0], n_bg, replace=False)]
 
-    f = lambda batch: model.predict_proba(batch)[:, 1]
+    if response_type == "classification":
+        f = lambda batch: model.predict_proba(batch)[:, 1]
+    else:
+        f = lambda batch: model.predict(batch)
     explainer = shap.KernelExplainer(f, bg)
     sv = explainer.shap_values(X_sample, nsamples=kshap_cfg["n_coalitions"])
 
@@ -119,8 +126,9 @@ def loco(X_df, y, feature_names, model, cfg, seed):
 
 
 @register("correlation")
-def correlation(X, y, feature_names):
-    scores = np.array([abs(pointbiserialr(y, X[:, j])[0]) for j in range(X.shape[1])])
+def correlation(X, y, feature_names, response_type):
+    corr_fn = pointbiserialr if response_type == "classification" else pearsonr
+    scores = np.array([abs(corr_fn(y, X[:, j])[0]) for j in range(X.shape[1])])
     return pd.Series(scores, index=feature_names, name="correlation")
 
 
@@ -160,14 +168,17 @@ def pdp_variance(model, X, feature_names, grid_resolution):
 
 
 @register("integrated_gradients")
-def integrated_gradients_importance(model, X, feature_names, ig_cfg, seed, rng):
+def integrated_gradients_importance(model, X, feature_names, ig_cfg, seed, rng, response_type):
     n_samples = min(ig_cfg["n_samples"], X.shape[0])
     sample_idx = rng.choice(X.shape[0], n_samples, replace=False)
 
     # Use mean of data as baseline for tabular data
     baseline = np.mean(X, axis=0)
     explainer = presets.integrated_gradients(baseline, ig_cfg["n_steps"], eps=ig_cfg.get("eps", 1e-5))
-    f = lambda batch: model.predict_proba(batch)[:, 1]
+    if response_type == "classification":
+        f = lambda batch: model.predict_proba(batch)[:, 1]
+    else:
+        f = lambda batch: model.predict(batch)
 
     attr_matrix = np.zeros((n_samples, X.shape[1]))
     for i, idx in enumerate(sample_idx):
