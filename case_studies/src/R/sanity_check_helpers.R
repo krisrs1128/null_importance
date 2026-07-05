@@ -2,15 +2,16 @@
 
 library(glue)
 
-#' Load dataset from CSV
+#' Load dataset by name and response type
 #' @param name dataset name
 #' @param n sample size
+#' @param response_type "classification" or "regression"
 #' @param data_dir directory containing data (default: "data")
-read_dataset <- function(name, n, data_dir = "data") {
-    read_csv(file.path(data_dir, glue("{name}_{n}.csv")), show_col_types = FALSE)
+read_dataset <- function(name, n, response_type, data_dir = "data") {
+    read_csv(file.path(data_dir, glue("{name}_{n}_{response_type}.csv")), show_col_types = FALSE)
 }
 
-#' Marginal correlation (Pearson)
+#' Marginal correlation
 #' @param data data frame
 #' @param feature feature name
 #' @param response response variable name (default: "y")
@@ -18,7 +19,7 @@ marginal_cor <- function(data, feature, response = "y") {
     cor(data[[feature]], data[[response]], use = "complete.obs")
 }
 
-#' Partial correlation via residualization
+#' Partial correlation
 #' @param data data frame
 #' @param feature feature name
 #' @param response response variable name (default: "y")
@@ -35,15 +36,16 @@ partial_cor <- function(data, feature, response = "y") {
     cor(resid_feat, resid_resp, use = "complete.obs")
 }
 
-#' Read same dataset across multiple sample sizes, tagging each row with n
+#' Read the same dataset across sample sizes
 #' @param name dataset name
+#' @param response_type "classification" or "regression"
 #' @param ns vector of sample sizes to compare (default c(50, 500, 5000))
 #' @param data_dir directory containing data
-read_dataset_across_n <- function(name, ns = c(50, 500, 5000), data_dir = "data") {
-    map_dfr(ns, ~ read_dataset(name, .x, data_dir) |> mutate(n = .x))
+read_dataset_across_n <- function(name, response_type, ns = c(50, 500, 5000), data_dir = "data") {
+    map_dfr(ns, ~ read_dataset(name, .x, response_type, data_dir) |> mutate(n = .x))
 }
 
-#' Marginal and partial correlation table for a set of features
+#' Marginal and partial correlations across a set of features
 #' @param data data frame
 #' @param features character vector of feature names to check
 #' @param response response variable name (default "y")
@@ -55,18 +57,18 @@ correlation_table <- function(data, features, response = "y") {
     )
 }
 
-#' Faceted binned boxplot across sample sizes, with features classified into
-#' labeled groups (e.g. signal/null) for coloring
+#' Faceted boxplot across sample sizes
 #' @param name dataset name
-#' @param features character vector of features to include
-#' @param classify function (or purrr-style formula) mapping feature name -> label
-#' @param fill_values named vector of label -> color for scale_fill_manual
+#' @param response_type "classification" or "regression"
+#' @param features features to include
+#' @param classify function mapping feature name -> label
+#' @param fill_values vector of label -> color for scale_fill_manual
 #' @param ns sample sizes to compare (default c(50, 500, 5000))
 #' @param data_dir directory containing data
-plot_facet_across_n <- function(name, features, classify, fill_values,
+plot_facet_across_n <- function(name, response_type, features, classify, fill_values,
                                 ns = c(50, 500, 5000), data_dir = "data") {
     classify <- as_mapper(classify)
-    dat_all <- read_dataset_across_n(name, ns, data_dir) |>
+    dat_all <- read_dataset_across_n(name, response_type, ns, data_dir) |>
         pivot_longer(cols = all_of(features), names_to = "feature", values_to = "value") |>
         mutate(
             feature_type = classify(feature),
@@ -93,7 +95,16 @@ quantile_bin <- function(x, n_quantiles = 3) {
     )
 }
 
-#' Plot plain scatter (no binning)
+#' Jitter
+#'
+#' Binary 0/1 classification targets get a small fixed jitter. Continuous
+#' regression targets get no jitter.
+#' @param y numeric vector (the response column being plotted)
+jitter_height_for <- function(y) {
+    if (all(y %in% c(0, 1))) 0.05 else 0
+}
+
+#' Scatterplot without binning
 #' @param data data frame
 #' @param x_var name of x variable (character)
 #' @param y_var name of y variable (default "y")
@@ -103,17 +114,17 @@ plot_scatter_plain <- function(data, x_var, y_var = "y", title = "", color = "#1
     ggplot(data, aes(x = .data[[x_var]], y = .data[[y_var]])) +
         geom_point(
             alpha = 0.4, size = 1.8, color = color,
-            position = position_jitter(height = 0.05, width = 0)
+            position = position_jitter(height = jitter_height_for(data[[y_var]]), width = 0)
         ) +
         geom_smooth(
             method = "loess", span = 0.8, color = "#333333",
-            fill = NA, se = FALSE, linewidth = 0.5
+            se = FALSE, linewidth = 0.5
         ) +
         labs(title = title, x = x_var, y = y_var) +
         theme(legend.position = "none")
 }
 
-#' Plot binned scatter with per-bin smooths
+#' Binned scatterplot
 #' @param data data frame
 #' @param x_var name of x variable (character)
 #' @param bin_var name of binning variable (character)
@@ -130,7 +141,7 @@ plot_scatter_binned <- function(data, x_var, bin_var, y_var = "y",
     )) +
         geom_point(
             alpha = 0.5, size = 1.8,
-            position = position_jitter(height = 0.05, width = 0)
+            position = position_jitter(height = jitter_height_for(data[[y_var]]), width = 0)
         ) +
         geom_smooth(
             method = "loess", span = 0.8,
@@ -147,8 +158,8 @@ plot_scatter_binned <- function(data, x_var, bin_var, y_var = "y",
         theme(legend.position = "right")
 }
 
-#' Three-panel scatter plot using patchwork
-#' Always shows: x1 vs y (plain) | x1 vs y binned by bin_feat | x3 vs y (plain)
+#' Combine scatterplot panels
+#' Shows x1 vs y (plain) | x1 vs y binned by bin_feat | x3 vs y (plain)
 #' @param data data frame
 #' @param x_plain1 first plain x variable
 #' @param x_binned x variable for x-axis of middle panel
@@ -171,13 +182,13 @@ compose_scatter_panels <- function(data, x_plain1, x_binned, bin_feat,
     )
     p3 <- plot_scatter_plain(data, x_plain2, title = glue("{x_plain2} vs y"))
 
-    # Patchwork composition with shared y-axis
+    # Compose panels using patchwork
     p1 + p2 + p3 +
         plot_layout(ncol = 3, widths = c(1, 1.1, 1)) &
         theme(axis.title.y = element_blank())
 }
 
-#' Create faceted binned boxplot across sample sizes
+#' Faceted boxplot across sample sizes
 #' @param data data frame (already has features as rows via pivot_longer)
 #' @param fill_var variable to use for fill color
 plot_facet_binned <- function(data, fill_var = "feature_type") {
@@ -195,4 +206,23 @@ plot_facet_binned <- function(data, fill_var = "feature_type") {
             axis.text.x = element_blank(),
             legend.position = "top"
         )
+}
+
+#' Print the correlation table and scatter panels for one dataset/response type
+#'
+#' @param name dataset name
+#' @param response_type "classification" or "regression"
+#' @param features feature names to include in the correlation table
+#' @param n sample size to visualize (default 500)
+#' @param palette_quantiles color palette for the binned panel
+#' @param data_dir directory containing data
+render_correlation_and_scatter <- function(name, response_type, features, n = 500,
+                                           palette_quantiles = c("#d73027", "#fee090", "#1a9850"),
+                                           data_dir = "data") {
+    dat <- read_dataset(name, n, response_type, data_dir)
+    print(correlation_table(dat, features), digits = 3)
+    compose_scatter_panels(dat,
+        x_plain1 = features[1], x_binned = features[1], bin_feat = features[2],
+        x_plain2 = tail(features, 1), palette_quantiles = palette_quantiles
+    )
 }
