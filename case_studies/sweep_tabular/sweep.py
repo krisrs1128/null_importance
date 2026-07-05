@@ -19,7 +19,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
 from datasets import DATASETS
-from model import SCORES, FunctionModel
+from model import SCORES, FunctionClassifier, FunctionRegressor
 
 # setup logging and repo-level imports
 log = logging.getLogger(__name__)
@@ -46,42 +46,46 @@ def main(cfg: DictConfig):
     results_dir = _script_dir / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # loop over datasets and sample sizes
+    # loop over datasets, response types, and sample sizes
     for name in DATASETS:
-        dataset_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
-        for n in cfg.sample_sizes:
+        base_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
+        for rt in cfg.response_types:
+            dataset_cfg = {**base_cfg, "response_type": rt}
+            for n in cfg.sample_sizes:
 
-            # read current data of interest
-            df = pd.read_csv(data_dir / f"{name}_{n}.csv")
-            X_df = df.drop(columns=["y"])
-            y = df["y"].values
-            X = X_df.values
-            feature_names = list(X_df.columns)
+                # read current data of interest
+                df = pd.read_csv(data_dir / f"{name}_{n}_{rt}.csv")
+                X_df = df.drop(columns=["y"])
+                y = df["y"].values
+                X = X_df.values
+                feature_names = list(X_df.columns)
 
-            # create the mimic model and read explanation hyperparameters
-            model = FunctionModel(SCORES[name], dataset_cfg).fit(X_df)
-            ctx = {
-                "model": model, "X": X, "y": y,
-                "X_df": X_df,
-                "feature_names": feature_names,
-                "rng": rng, "seed": cfg.seed,
-                "n_repeats": cfg.permutation.n_repeats,
-                "mcfg": cfg_dict["minshap"],
-                "kshap_cfg": cfg_dict["kernelshap"],
-                "cfg": cfg_dict,
-                "kcfg": cfg_dict["knockoffs"],
-                "grid_resolution": cfg.pdp.grid_resolution,
-                "ig_cfg": cfg_dict["integrated_gradients"],
-            }
+                # create the mimic model and read explanation hyperparameters
+                ModelCls = FunctionClassifier if rt == "classification" else FunctionRegressor
+                model = ModelCls(SCORES[name], dataset_cfg).fit(X_df)
+                ctx = {
+                    "model": model, "X": X, "y": y,
+                    "X_df": X_df,
+                    "feature_names": feature_names,
+                    "rng": rng, "seed": cfg.seed,
+                    "response_type": rt,
+                    "n_repeats": cfg.permutation.n_repeats,
+                    "mcfg": cfg_dict["minshap"],
+                    "kshap_cfg": cfg_dict["kernelshap"],
+                    "cfg": cfg_dict,
+                    "kcfg": cfg_dict["knockoffs"],
+                    "grid_resolution": cfg.pdp.grid_resolution,
+                    "ig_cfg": cfg_dict["integrated_gradients"],
+                }
 
-            # run and save the explanations
-            for method, fn in METHODS.items():
-                if not cfg.methods[method]:
-                    continue
-                log.info(f"Computing {name}_{n}_{method}...")
-                sig = inspect.signature(fn)
-                result = fn(**{p: ctx[p] for p in sig.parameters})
-                _save_method(results_dir, f"{name}_{n}_{method}", result)
+                # run and save the explanations
+                for method, fn in METHODS.items():
+                    if not cfg.methods[method]:
+                        continue
+                    log.info(f"Computing {name}_{n}_{rt}_{method}...")
+                    sig = inspect.signature(fn)
+                    result = fn(**{p: ctx[p] for p in sig.parameters})
+                    _save_method(results_dir, f"{name}_{n}_{rt}_{method}", result)
 
 
 if __name__ == "__main__":
