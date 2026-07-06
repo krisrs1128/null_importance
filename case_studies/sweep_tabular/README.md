@@ -13,7 +13,7 @@ generation from the minSHAP paper. These include,
 $$\mu(x) = \beta \sum_{j \in \mathcal{S}} x_j$$
 
 - XOR/parity function:
-$$\mu(x) = -\gamma \prod_{j \in \mathcal{S}} \operatorname{sign}(x_j), \quad x_j \sim U[-1,1]$$
+$$\mu(x) = -\gamma \prod_{j \in \mathcal{S}} \text{sign}(x_j), \quad x_j \sim U[-1,1]$$
 
 - Product:
 $$\mu(x) = \gamma \sum_k x_{2k-1} x_{2k}$$
@@ -32,11 +32,11 @@ dimensionality, and the number of signal features. Each data function has an
 option for either regression or classification responses,
 
 $$
-y_i \sim \mathcal{N}(\mu\left(x_i\right), \sigma_{y}^{2}\right)
+y_i \sim \mathcal{N}\left(\mu\left(x_i\right), \sigma_{y}^{2}\right)
 $$
 
 $$
-y_i \sim \operatorname{Bernoulli}(\operatorname{logit}^{-1}\left(\mu\left(x_i\right)\right))
+y_i \sim \text{Bernoulli}(\text{logit}^{-1}\left(\mu\left(x_i\right)\right))
 $$
 
 For explanation, we consider marginal correlation (pearson for regression,
@@ -57,7 +57,8 @@ conda activate ni_case_studies
 ```
 
 The synthetic data and explanation hyperparameters are defined in `config.yaml`.
-To generate these example data and the associated model explanations, run,
+By default we consider sample sizes $n \in \{50, 500, 5000\}$. To generate these
+example data and the associated model explanations, run,
 
 ```
 python generate.py
@@ -65,7 +66,8 @@ python sweep.py
 ```
 
 The synthetic data are saved into separate CSVs in a `data` subdirectory of this
-case study directory. For example, the first few rows of `linear_additive_50_regression.csv` look like,
+case study directory, with names like `data/{dataset}_{n}.csv`.  For example,
+the first few rows of `linear_additive_50_regression.csv` look like,
 
 ```
 x1,x2,x3,x4,noise_1,noise_2,noise_3,noise_4,noise_5,noise_6,y
