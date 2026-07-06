@@ -3,7 +3,48 @@
 
 ### Design
 
+This case study defines synthetic datasets with different types of ground truth
+null importance (functional, statistical, and causal) and applies representative
+explainability techniques.  For synthetic data, we have variants of the data
+generation from the minSHAP paper. These include,
 
+- Linear model:
+
+$$\mu(x) = \beta \sum_{j \in \mathcal{S}} x_j$$
+
+- XOR/parity function:
+$$\mu(x) = -\gamma \prod_{j \in \mathcal{S}} \operatorname{sign}(x_j), \quad x_j \sim U[-1,1]$$
+
+- Product:
+$$\mu(x) = \gamma \sum_k x_{2k-1} x_{2k}$$
+
+- Dependent features:
+$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_{2j-1} = z_j,\ x_{2j} = z_j + \epsilon$$
+
+- Confounding:
+$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_j = z_j + \epsilon \ \ (z_j \text{ unobserved})$$
+
+The null features $j \notin S$ are simulated from a random normal. Each data
+generation function takes a random seed to ensure reproducibility. The $\gamma$
+and $\beta$ parameters are signal strengths that can be set through
+configuration file, which can also be used to modify sample sizes, the
+dimensionality, and the number of signal features. Each data function has an
+option for either regression or classification responses,
+
+$$
+y_i \sim \mathcal{N}(\mu\left(x_i\right), \sigma_{y}^{2}\right)
+$$
+
+$$
+y_i \sim \operatorname{Bernoulli}(\operatorname{logit}^{-1}\left(\mu\left(x_i\right)\right))
+$$
+
+For explanation, we consider marginal correlation (pearson for regression,
+biserial for classification), permutation importance, integrated gradients,
+knockoffs (from the `knockpy` package) KernelSHAP, minSHAP, and PDP (variance of
+the fitted profile). We aren't using MDI, TreeSHAP, or LOCO because our
+implementations assume a tree model and for this synthetic data experiment we
+treat the simulated mean response as the prediction.
 
 ### Workflow
 
@@ -33,6 +74,17 @@ x1,x2,x3,x4,noise_1,noise_2,noise_3,noise_4,noise_5,noise_6,y
 1.3307191981411821,-0.9569030409209924,-0.9024896952647593,0.23646669405323661,-3.3065107807835687,0.01830653561961367,-0.6889060379356782,-2.0523294112041737,-0.48028330868734825,1.5303530933069227,-0.6673742894512019
 ```
 
+To visualize these simulated datasets, you can run,
+
+```
+quarto preview sanity_checks.qmd
+```
+
+which will generate a notebook with summary visualizations, e.g.,
+
+![](https://github.com/user-attachments/assets/d7d0e608-f7d9-4dfe-b3e9-26c38f0b47c2)
+
+
 A metadata file giving the git commit number, seed, and configuration paths is
 saved in `data/run_metadata.yaml`. The global explanation variable importances
 are saved into the `results` subdirectory. These files have the form,
@@ -48,5 +100,7 @@ noise_2,0.0
 noise_3,0.0
 ```
 
-Rerunning either the generation or explanation scripts will first check whether
-the outputs are present and will only rerun those that are not present.
+Note that some methods give local importances, and we have aggregated using
+strategies explained in `model.py`.  Rerunning either the generation or
+explanation scripts will first check whether the outputs are present and will
+only rerun those that are not present.
