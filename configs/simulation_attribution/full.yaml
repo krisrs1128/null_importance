@@ -1,0 +1,26 @@
+data_dir: data/simulations
+output_dir: results/simulation_attribution
+dataset_types:
+  - linear_additive
+  - xor
+  - product_interaction
+methods:
+  - baseline_shap
+  - baseline_minshap
+  - marginal_shap
+  - marginal_minshap
+  - integrated_gradients
+row_limit: 25
+background_size: 128
+n_orderings: 200
+n_steps: 64
+seed: 0
+baseline_strategy: zeros
+include_unsupported: false
+overwrite: false
+metrics:
+  injected_null: true
+  stability: true
+  stability_neighbors: 16
+  stability_radius: 0.05
+

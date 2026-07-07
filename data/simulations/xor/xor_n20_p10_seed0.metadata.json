@@ -1,0 +1,35 @@
+{
+  "additive_features": [],
+  "block_size": null,
+  "corr": 0.0,
+  "covariance_structure": "independent",
+  "data_generating_equation": "y = 1{X0 != X1}",
+  "dataset_type": "xor",
+  "feature_indexing": "zero_based",
+  "interaction_features": [
+    [
+      0,
+      1
+    ]
+  ],
+  "n": 20,
+  "noise_feature_type": "bernoulli",
+  "noise_features": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "p": 10,
+  "relevant_features": [
+    0,
+    1
+  ],
+  "seed": 0,
+  "sigma": 0.0,
+  "task_type": "classification"
+}

@@ -1,24 +1,24 @@
-"""Generate the main synthetic simulation data sweep.
+"""Generate synthetic simulation data.
 
 Run the minimal smoke-test sweep:
-    python scripts/generate_simulation_data.py --minimal
+    python scripts/simulation/generate_data.py --minimal
 
 Run the full Section 8 sweep:
-    python scripts/generate_simulation_data.py
+    python scripts/simulation/generate_data.py
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import random
 import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from simulation_data import (  # noqa: E402
@@ -26,7 +26,7 @@ from simulation_data import (  # noqa: E402
     generate_linear_additive_data,
     generate_product_interaction_data,
     generate_xor_data,
-    save_npz_dataset,
+    save_csv_dataset,
 )
 
 SEED = 0
@@ -84,7 +84,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="Overwrite existing NPZ files. By default existing outputs are skipped.",
+        help="Overwrite existing CSV files. By default existing outputs are skipped.",
     )
     return parser.parse_args()
 
@@ -127,9 +127,8 @@ def generate_sweep(
         "dimensions": [int(p) for p in dimensions],
         "loop_order": "dataset_type -> n -> p",
     }
-    with (output_dir / "sweep_config.json").open("w") as file:
-        json.dump(sweep_config, file, indent=2)
-        file.write("\n")
+    with (output_dir / "sweep_config.yaml").open("w") as file:
+        yaml.safe_dump(sweep_config, file, sort_keys=False)
 
     generated = 0
     skipped = 0
@@ -162,7 +161,7 @@ def generate_sweep(
                     skipped += 1
                     continue
 
-                save_npz_dataset(X, y, y_mean, metadata, output_path)
+                save_csv_dataset(X, y, y_mean, metadata, output_path)
                 generated += 1
                 logging.info("Wrote %s", output_path)
 

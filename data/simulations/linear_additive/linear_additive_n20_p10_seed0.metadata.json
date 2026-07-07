@@ -1,0 +1,40 @@
+{
+  "additive_features": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "beta": [
+    4.0,
+    4.0,
+    3.0,
+    2.0
+  ],
+  "block_size": null,
+  "corr": 0.0,
+  "covariance_structure": "independent",
+  "data_generating_equation": "y = sum_j beta[j] * X_j + epsilon, j in additive_features; epsilon ~ N(0, sigma^2)",
+  "dataset_type": "linear_additive",
+  "feature_indexing": "zero_based",
+  "interaction_features": [],
+  "n": 20,
+  "noise_features": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "p": 10,
+  "relevant_features": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "seed": 0,
+  "sigma": 1.0,
+  "task_type": "regression"
+}

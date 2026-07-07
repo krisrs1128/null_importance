@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import random
 from pathlib import Path
@@ -71,6 +72,8 @@ def generate_linear_additive_data(
 
     beta_arr = np.asarray([4.0, 4.0, 3.0, 2.0] if beta is None else beta, dtype=float)
     n, p = int(n), int(p)
+    if p < len(beta_arr):
+        raise ValueError("p must be at least len(beta).")
     if seed is not None:
         random.seed(int(seed))
         np.random.seed(int(seed))
@@ -117,6 +120,8 @@ def generate_xor_data(
     """Generate XOR classification data."""
 
     n, p = int(n), int(p)
+    if p < 2:
+        raise ValueError("p must be at least 2 for XOR data.")
     if seed is not None:
         random.seed(int(seed))
         np.random.seed(int(seed))
@@ -163,8 +168,17 @@ def generate_product_interaction_data(
 
     n, p = int(n), int(p)
     gamma = float(gamma)
+    if p < 2:
+        raise ValueError("p must be at least 2 for product interaction data.")
     if include_main_effects and beta_main is None:
         beta_main = [4.0, 4.0]
+    if not include_main_effects and beta_main is not None:
+        raise ValueError(
+            "beta_main was provided but include_main_effects=False; "
+            "set include_main_effects=True to use it, or omit beta_main."
+        )
+    if beta_main is not None and len(beta_main) != 2:
+        raise ValueError("beta_main must contain exactly two values.")
     if seed is not None:
         random.seed(int(seed))
         np.random.seed(int(seed))
@@ -226,6 +240,10 @@ def generate_reference_data(
         dtype=float,
     )
     n, p = int(n), int(p)
+    if p < 8:
+        raise ValueError("p must be at least 8 for reference data.")
+    if len(beta_arr) != 8:
+        raise ValueError("beta must contain exactly eight values.")
     if seed is not None:
         random.seed(int(seed))
         np.random.seed(int(seed))
@@ -279,35 +297,72 @@ def generate_reference_data(
     )
 
 
-def save_npz_dataset(
+def save_csv_dataset(
     X: np.ndarray,
     y: np.ndarray,
     y_mean: np.ndarray,
     metadata: dict[str, Any],
     path: str | Path,
 ) -> None:
-    """Save one generated dataset as a compressed NPZ with JSON metadata."""
+    """Save one generated dataset as CSV plus a JSON metadata sidecar."""
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        path,
-        X=X,
-        y=y,
-        y_mean=y_mean,
-        metadata=json.dumps(metadata, sort_keys=True),
-    )
+    X_arr = np.asarray(X, dtype=np.float64)
+    y_arr = np.asarray(y)
+    y_mean_arr = np.asarray(y_mean, dtype=np.float64)
+    if X_arr.ndim != 2:
+        raise ValueError("X must be a 2D array.")
+    if y_arr.shape != (X_arr.shape[0],):
+        raise ValueError("y must be a 1D array with one value per row of X.")
+    if y_mean_arr.shape != (X_arr.shape[0],):
+        raise ValueError("y_mean must be a 1D array with one value per row of X.")
+
+    feature_names = [f"x{j}" for j in range(X_arr.shape[1])]
+    with path.open("w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([*feature_names, "y", "y_mean"])
+        for row, y_value, y_mean_value in zip(X_arr, y_arr, y_mean_arr):
+            writer.writerow([*row.tolist(), y_value, y_mean_value])
+
+    with metadata_path_for(path).open("w") as file:
+        json.dump(metadata, file, indent=2, sort_keys=True)
+        file.write("\n")
 
 
-def load_npz_dataset(
+def load_csv_dataset(
     path: str | Path,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
-    """Load a dataset saved by save_npz_dataset."""
+    """Load a dataset saved by save_csv_dataset."""
 
-    with np.load(path, allow_pickle=False) as data:
-        X, y, y_mean = data["X"], data["y"], data["y_mean"]
-        metadata = json.loads(str(data["metadata"]))
+    path = Path(path)
+    with metadata_path_for(path).open() as file:
+        metadata = json.load(file)
+    with path.open(newline="") as file:
+        reader = csv.DictReader(file)
+        if reader.fieldnames is None:
+            raise ValueError(f"{path} has no CSV header.")
+        feature_names = _feature_columns(reader.fieldnames)
+        if "y" not in reader.fieldnames or "y_mean" not in reader.fieldnames:
+            raise ValueError(f"{path} must contain 'y' and 'y_mean' columns.")
+        rows = list(reader)
+
+    X = np.asarray(
+        [[float(row[name]) for name in feature_names] for row in rows],
+        dtype=np.float64,
+    )
+    if metadata.get("task_type") == "classification":
+        y = np.asarray([int(float(row["y"])) for row in rows], dtype=np.int64)
+    else:
+        y = np.asarray([float(row["y"]) for row in rows], dtype=np.float64)
+    y_mean = np.asarray([float(row["y_mean"]) for row in rows], dtype=np.float64)
     return X, y, y_mean, metadata
+
+
+def metadata_path_for(path: str | Path) -> Path:
+    """Return the JSON sidecar path for a simulation data CSV."""
+
+    return Path(path).with_suffix(".metadata.json")
 
 
 def build_filename(
@@ -343,7 +398,14 @@ def build_filename(
         extras.append(f"{name}{_format_filename_value(value)}")
     if extras:
         stem = f"{stem}__{'_'.join(extras)}"
-    return f"{stem}.npz"
+    return f"{stem}.csv"
+
+
+def _feature_columns(fieldnames: list[str]) -> list[str]:
+    feature_names = [name for name in fieldnames if name.startswith("x") and name[1:].isdigit()]
+    if not feature_names:
+        raise ValueError("CSV must contain feature columns named x0, x1, ...")
+    return sorted(feature_names, key=lambda name: int(name[1:]))
 
 
 def _format_filename_value(value: Any) -> str:

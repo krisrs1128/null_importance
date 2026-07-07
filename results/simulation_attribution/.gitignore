@@ -1,0 +1,10 @@
+*
+!.gitignore
+!README.md
+!raw_scores/
+!metrics/
+!summaries/
+!raw_scores/.gitkeep
+!metrics/.gitkeep
+!summaries/.gitkeep
+

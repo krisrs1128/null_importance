@@ -1,0 +1,10 @@
+seed: 0
+dataset_types:
+- linear_additive
+- xor
+- product_interaction
+sample_sizes:
+- 20
+dimensions:
+- 10
+loop_order: dataset_type -> n -> p

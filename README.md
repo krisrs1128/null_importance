@@ -1,5 +1,9 @@
 # axiomatic_interpretability
 
+This repository contains a small compositional attribution library plus a
+simulation workflow for testing attribution methods on generated data.
+
+
 ## Simulation data
 
 This repository includes synthetic generators for the Section 8 simulation
@@ -23,16 +27,51 @@ The default main sweep varies:
 Generate a small smoke-test sweep:
 
 ```bash
-python scripts/generate_simulation_data.py --minimal
+python scripts/simulation/generate_data.py --minimal
 ```
 
 Generate the full sweep:
 
 ```bash
-python scripts/generate_simulation_data.py
+python scripts/simulation/generate_data.py
 ```
 
 Outputs are written under
-`data/simulations/{dataset_type}/`, with `data/simulations/sweep_config.json`
-recording the seed, grid, and loop order. Existing output files are skipped by
-default; pass `--overwrite` to regenerate them in place.
+`data/simulations/{dataset_type}/`, with `data/simulations/sweep_config.yaml`
+recording the seed, grid, and loop order. Each dataset is saved as a CSV file
+with a same-stem `.metadata.json` sidecar that records the simulation contract.
+Existing output files are skipped by default; pass `--overwrite` to regenerate
+them in place.
+
+## Attribution Benchmark
+
+The benchmark loads generated simulation datasets, rebuilds the oracle
+data-generating function from each metadata sidecar, applies configured
+`axiom_interp` methods, and writes attribution outputs.
+
+Run attribution on the minimal generated data:
+
+```bash
+python scripts/simulation/run_attribution.py --config configs/simulation_attribution/minimal.yaml --overwrite
+python scripts/simulation/summarize_attribution.py
+```
+
+Run the full workflow:
+
+```bash
+python scripts/simulation/generate_data.py --overwrite
+python scripts/simulation/run_attribution.py --config configs/simulation_attribution/full.yaml --overwrite
+python scripts/simulation/summarize_attribution.py
+```
+
+Result files under `results/simulation_attribution/`:
+
+- `raw_scores/`: one feature-score row per dataset, method, input row, and feature.
+- `metrics/`: one metric row per dataset, method, and input row.
+- `summaries/`: aggregate CSVs produced from metric files.
+
+Inspect the results in:
+
+```bash
+notebooks/simulation_attribution_results.ipynb
+```

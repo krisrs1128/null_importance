@@ -15,5 +15,6 @@ dependencies:
   - jupyter
   - matplotlib
   - seaborn
+  - pytest
   - pip:
     - ipykernel
