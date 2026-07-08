@@ -31,7 +31,13 @@ datasets:
 
 response_types: [classification, regression]
 sample_sizes: [50, 500, 5000]
-seed: 2026
+
+# One generate+sweep run per seed. seeds[0] is the canonical seed used by the
+# single-run panels in visualize.qmd; the rest exist to see run-to-run spread
+# (e.g. the correlation-vs-knockoffs divergence figure).
+seeds: [2026, 3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009]
+
+figures_dir: results/figures
 
 # We aren't running mdi, treeshap, or loco because they need actual tree
 # structured models (at least in our assumed implementations) and the synthetic
