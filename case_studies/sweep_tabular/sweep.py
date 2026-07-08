@@ -4,7 +4,7 @@ Explains each dataset's data-generating function (see SCORES in model.py),
 treating its output as predictions, rather than training a secondary model to
 use in the explanation.
 
-Run from the repo root, after generate.py creates data/{dataset}_{n}.csv:
+Run from the repo root, after generate.py creates data/{dataset}_{n}_{response_type}_{seed}.csv:
     python case_studies/sweep_tabular/sweep.py
 """
 
@@ -40,52 +40,53 @@ def main(cfg: DictConfig):
 
     # read configuration and setup output directories
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
-    rng = np.random.default_rng(cfg.seed)
 
     data_dir = _script_dir / "data"
     results_dir = _script_dir / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # loop over datasets, response types, and sample sizes
-    for name in DATASETS:
-        base_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
-        for rt in cfg.response_types:
-            dataset_cfg = {**base_cfg, "response_type": rt}
-            for n in cfg.sample_sizes:
+    # one independent rng per seed; loop over datasets/response types/sample sizes within each
+    for seed in cfg.seeds:
+        rng = np.random.default_rng(seed)
+        for name in DATASETS:
+            base_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
+            for rt in cfg.response_types:
+                dataset_cfg = {**base_cfg, "response_type": rt}
+                for n in cfg.sample_sizes:
 
-                # read current data of interest
-                df = pd.read_csv(data_dir / f"{name}_{n}_{rt}.csv")
-                X_df = df.drop(columns=["y"])
-                y = df["y"].values
-                X = X_df.values
-                feature_names = list(X_df.columns)
+                    # read current data of interest
+                    df = pd.read_csv(data_dir / f"{name}_{n}_{rt}_{seed}.csv")
+                    X_df = df.drop(columns=["y"])
+                    y = df["y"].values
+                    X = X_df.values
+                    feature_names = list(X_df.columns)
 
-                # create the mimic model and read explanation hyperparameters
-                ModelCls = FunctionClassifier if rt == "classification" else FunctionRegressor
-                model = ModelCls(SCORES[name], dataset_cfg).fit(X_df)
-                ctx = {
-                    "model": model, "X": X, "y": y,
-                    "X_df": X_df,
-                    "feature_names": feature_names,
-                    "rng": rng, "seed": cfg.seed,
-                    "response_type": rt,
-                    "n_repeats": cfg.permutation.n_repeats,
-                    "mcfg": cfg_dict["minshap"],
-                    "kshap_cfg": cfg_dict["kernelshap"],
-                    "cfg": cfg_dict,
-                    "kcfg": cfg_dict["knockoffs"],
-                    "grid_resolution": cfg.pdp.grid_resolution,
-                    "ig_cfg": cfg_dict["integrated_gradients"],
-                }
+                    # create the mimic model and read explanation hyperparameters
+                    ModelCls = FunctionClassifier if rt == "classification" else FunctionRegressor
+                    model = ModelCls(SCORES[name], dataset_cfg).fit(X_df)
+                    ctx = {
+                        "model": model, "X": X, "y": y,
+                        "X_df": X_df,
+                        "feature_names": feature_names,
+                        "rng": rng, "seed": seed,
+                        "response_type": rt,
+                        "n_repeats": cfg.permutation.n_repeats,
+                        "mcfg": cfg_dict["minshap"],
+                        "kshap_cfg": cfg_dict["kernelshap"],
+                        "cfg": cfg_dict,
+                        "kcfg": cfg_dict["knockoffs"],
+                        "grid_resolution": cfg.pdp.grid_resolution,
+                        "ig_cfg": cfg_dict["integrated_gradients"],
+                    }
 
-                # run and save the explanations
-                for method, fn in METHODS.items():
-                    if not cfg.methods[method]:
-                        continue
-                    log.info(f"Computing {name}_{n}_{rt}_{method}...")
-                    sig = inspect.signature(fn)
-                    result = fn(**{p: ctx[p] for p in sig.parameters})
-                    _save_method(results_dir, f"{name}_{n}_{rt}_{method}", result)
+                    # run and save the explanations
+                    for method, fn in METHODS.items():
+                        if not cfg.methods[method]:
+                            continue
+                        log.info(f"Computing {name}_{n}_{rt}_{seed}_{method}...")
+                        sig = inspect.signature(fn)
+                        result = fn(**{p: ctx[p] for p in sig.parameters})
+                        _save_method(results_dir, f"{name}_{n}_{rt}_{seed}_{method}", result)
 
 
 if __name__ == "__main__":
