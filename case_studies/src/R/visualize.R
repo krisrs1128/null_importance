@@ -21,12 +21,13 @@ axiom_palette <- list(
 #' @param base_size Numeric. Base font size.
 #' @return A ggplot2 theme object.
 theme_axiomatic <- function(base_size = 10) {
-    theme_minimal(base_size = base_size) +
+    theme_classic(base_size = base_size) +
         theme(
             text = element_text(color = axiom_palette$ink),
             plot.title = element_text(hjust = 0, face = "plain", size = rel(1.1)),
             plot.background = element_rect(fill = axiom_palette$bg, color = NA),
             panel.background = element_rect(fill = axiom_palette$bg, color = NA),
+            legend.background = element_rect(fill = axiom_palette$bg, color = NA),
             panel.border = element_blank(),
             panel.grid.major = element_line(color = axiom_palette$grid, linewidth = 0.3),
             panel.grid.minor = element_blank(),
