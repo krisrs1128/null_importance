@@ -113,25 +113,24 @@ only rerun those that are not present.
   importance profiles close together. Noise variables cluster together, while
   the designed signal and null-feature types separate by dataset.
 
-![Feature Importance MFA: scores](visualize_files/figure-html/fig-mfa-scores-1.png)
-<img width="1920" height="1152" alt="fig-mfa-scores-1" src="https://github.com/user-attachments/assets/c8db9956-d751-456c-9e32-0a0869ddac1d" />
-
+![Feature Importance MFA: scores](https://github.com/user-attachments/assets/c8db9956-d751-456c-9e32-0a0869ddac1d)
 
 - **Feature Importance MFA: loadings:** This figure shows which methods define
   each MFA axis. Dimension 1 mainly tracks the common signal-vs-noise contrast,
   while Dimension 2 shows method disagreements.
 
-![Feature Importance MFA: loadings](visualize_files/figure-html/fig-mfa-loadings-1.png)
+![Feature Importance MFA: loadings](https://github.com/user-attachments/assets/50a12fe8-f7ca-49b9-8f1e-9255af4e17f1)
 
 - **Importance Rankings:** This figure ranks features for the `n = 500`
   classification runs. Linear additive data gives stable signal-first rankings,
   while XOR, interactions, dependence, and confounding create more disagreement.
 
-![Importance Rankings](visualize_files/figure-html/fig-bump-1.png)
+![Importance Rankings](https://github.com/user-attachments/assets/aad4be1e-7f5b-4310-ba12-1216ef10d91d)
 
 - **Correlation vs. knockoffs on dependent features:** This figure compares the
   true anchor `x1` with its correlated proxy `x2=x1+ε`. Correlation scores both
   highly, while knockoffs separates the anchor from the conditionally null proxy
   more clearly as sample size increases.
 
-![Correlation vs. knockoffs on dependent features](visualize_files/figure-html/fig-divergence-1.png)
+![Correlation vs. knockoffs on dependent features](https://github.com/user-attachments/assets/a395ef4d-6498-4368-8196-cccabfc4cd29)
+
