@@ -106,3 +106,30 @@ Note that some methods give local importances, and we have aggregated using
 strategies explained in `model.py`.  Rerunning either the generation or
 explanation scripts will first check whether the outputs are present and will
 only rerun those that are not present.
+
+### Figure summaries
+
+- **Feature Importance MFA: scores:** This figure places features with similar
+  importance profiles close together. Noise variables cluster together, while
+  the designed signal and null-feature types separate by dataset.
+
+![Feature Importance MFA: scores](visualize_files/figure-html/fig-mfa-scores-1.png)
+
+- **Feature Importance MFA: loadings:** This figure shows which methods define
+  each MFA axis. Dimension 1 mainly tracks the common signal-vs-noise contrast,
+  while Dimension 2 shows method disagreements.
+
+![Feature Importance MFA: loadings](visualize_files/figure-html/fig-mfa-loadings-1.png)
+
+- **Importance Rankings:** This figure ranks features for the `n = 500`
+  classification runs. Linear additive data gives stable signal-first rankings,
+  while XOR, interactions, dependence, and confounding create more disagreement.
+
+![Importance Rankings](visualize_files/figure-html/fig-bump-1.png)
+
+- **Correlation vs. knockoffs on dependent features:** This figure compares the
+  true anchor `x1` with its correlated proxy `x2=x1+ε`. Correlation scores both
+  highly, while knockoffs separates the anchor from the conditionally null proxy
+  more clearly as sample size increases.
+
+![Correlation vs. knockoffs on dependent features](visualize_files/figure-html/fig-divergence-1.png)

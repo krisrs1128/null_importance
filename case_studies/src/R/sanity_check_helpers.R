@@ -7,8 +7,15 @@ library(glue)
 #' @param n sample size
 #' @param response_type "classification" or "regression"
 #' @param data_dir directory containing data (default: "data")
-read_dataset <- function(name, n, response_type, data_dir = "data") {
-    read_csv(file.path(data_dir, glue("{name}_{n}_{response_type}.csv")), show_col_types = FALSE)
+#' @param seed seed suffix used by generate.py; NULL keeps the legacy filename
+read_dataset <- function(name, n, response_type, data_dir = "data",
+                         seed = getOption("sweep_tabular_seed", NULL)) {
+    filename <- if (is.null(seed)) {
+        glue("{name}_{n}_{response_type}.csv")
+    } else {
+        glue("{name}_{n}_{response_type}_{seed}.csv")
+    }
+    read_csv(file.path(data_dir, filename), show_col_types = FALSE)
 }
 
 #' Marginal correlation
@@ -41,8 +48,12 @@ partial_cor <- function(data, feature, response = "y") {
 #' @param response_type "classification" or "regression"
 #' @param ns vector of sample sizes to compare (default c(50, 500, 5000))
 #' @param data_dir directory containing data
-read_dataset_across_n <- function(name, response_type, ns = c(50, 500, 5000), data_dir = "data") {
-    map_dfr(ns, ~ read_dataset(name, .x, response_type, data_dir) |> mutate(n = .x))
+#' @param seed seed suffix used by generate.py; NULL keeps the legacy filename
+read_dataset_across_n <- function(name, response_type, ns = c(50, 500, 5000),
+                                  data_dir = "data",
+                                  seed = getOption("sweep_tabular_seed", NULL)) {
+    map_dfr(ns, ~ read_dataset(name, .x, response_type, data_dir, seed) |>
+        mutate(n = .x))
 }
 
 #' Marginal and partial correlations across a set of features
@@ -65,10 +76,12 @@ correlation_table <- function(data, features, response = "y") {
 #' @param fill_values vector of label -> color for scale_fill_manual
 #' @param ns sample sizes to compare (default c(50, 500, 5000))
 #' @param data_dir directory containing data
+#' @param seed seed suffix used by generate.py; NULL keeps the legacy filename
 plot_facet_across_n <- function(name, response_type, features, classify, fill_values,
-                                ns = c(50, 500, 5000), data_dir = "data") {
+                                ns = c(50, 500, 5000), data_dir = "data",
+                                seed = getOption("sweep_tabular_seed", NULL)) {
     classify <- as_mapper(classify)
-    dat_all <- read_dataset_across_n(name, response_type, ns, data_dir) |>
+    dat_all <- read_dataset_across_n(name, response_type, ns, data_dir, seed) |>
         pivot_longer(cols = all_of(features), names_to = "feature", values_to = "value") |>
         mutate(
             feature_type = classify(feature),
@@ -216,10 +229,12 @@ plot_facet_binned <- function(data, fill_var = "feature_type") {
 #' @param n sample size to visualize (default 500)
 #' @param palette_quantiles color palette for the binned panel
 #' @param data_dir directory containing data
+#' @param seed seed suffix used by generate.py; NULL keeps the legacy filename
 render_correlation_and_scatter <- function(name, response_type, features, n = 500,
                                            palette_quantiles = c("#d73027", "#fee090", "#1a9850"),
-                                           data_dir = "data") {
-    dat <- read_dataset(name, n, response_type, data_dir)
+                                           data_dir = "data",
+                                           seed = getOption("sweep_tabular_seed", NULL)) {
+    dat <- read_dataset(name, n, response_type, data_dir, seed)
     print(correlation_table(dat, features), digits = 3)
     compose_scatter_panels(dat,
         x_plain1 = features[1], x_binned = features[1], bin_feat = features[2],

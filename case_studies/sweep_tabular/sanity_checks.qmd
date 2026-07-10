@@ -22,6 +22,8 @@ palette_overall <- c(
     accent_red = "#e74c3c"
 )
 palette_quantiles <- c("#d73027", "#fee090", "#1a9850")
+active_seed <- 2026
+options(sweep_tabular_seed = active_seed)
 sample_sizes <- c(50, 500, 5000)
 
 # Apply theme globally with increased font sizes
