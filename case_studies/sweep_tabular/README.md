@@ -114,6 +114,8 @@ only rerun those that are not present.
   the designed signal and null-feature types separate by dataset.
 
 ![Feature Importance MFA: scores](visualize_files/figure-html/fig-mfa-scores-1.png)
+<img width="1920" height="1152" alt="fig-mfa-scores-1" src="https://github.com/user-attachments/assets/c8db9956-d751-456c-9e32-0a0869ddac1d" />
+
 
 - **Feature Importance MFA: loadings:** This figure shows which methods define
   each MFA axis. Dimension 1 mainly tracks the common signal-vs-noise contrast,
