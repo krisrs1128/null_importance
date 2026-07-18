@@ -1,6 +1,8 @@
 ---
 title: "Method Comparison on Synthetic Data"
-format: html
+format:
+  html:
+    embed-resources: true
 execute:
   echo: false
   warning: false
