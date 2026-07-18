@@ -28,6 +28,9 @@ datasets:
     noise_scale: 0.3
     gamma: 3.0
     sigma_y: 1.0
+  quadratic:
+    gamma: 3.0
+    sigma_y: 1.0
 
 response_types: [classification, regression]
 sample_sizes: [50, 500, 5000]
@@ -50,6 +53,7 @@ methods:
   knockoffs: true
   pdp_variance: true
   integrated_gradients: true
+  gcm: true
   mdi: false
   treeshap: false
   loco: false
@@ -79,6 +83,9 @@ integrated_gradients:
   n_steps: 64
   eps: 1e-5
 
+gcm:
+  n_estimators: 100
+
 categories:
   correlation: marginal
   kernelshap: marginal
@@ -87,3 +94,4 @@ categories:
   knockoffs: conditional
   pdp_variance: functional
   integrated_gradients: functional
+  gcm: conditional
