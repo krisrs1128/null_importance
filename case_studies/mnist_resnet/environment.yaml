@@ -1,0 +1,22 @@
+name: ni_mnist_resnet
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy<2
+  - pandas
+  - scikit-learn
+  - scipy
+  - pyarrow
+  - pillow
+  - pip:
+      - hydra-core
+      - omegaconf
+      - torch
+      - torchvision
+      - huggingface-hub
+      - transformers
+      - shap
+      - knockpy
