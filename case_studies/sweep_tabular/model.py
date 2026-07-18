@@ -52,6 +52,13 @@ def _score_dependent_features(X_df, cfg):
     return MEAN_FNS["dependent_features"](cols, cfg)
 
 
+@register_score("quadratic")
+def _score_quadratic(X_df, cfg):
+    n_nonnull = cfg["n_nonnull"]
+    cols = [X_df[f"x{j + 1}"] for j in range(n_nonnull)]
+    return MEAN_FNS["quadratic"](cols, cfg)
+
+
 @register_score("confounding")
 def _score_confounding(X_df, cfg):
     n_nonnull = cfg["n_nonnull"]
