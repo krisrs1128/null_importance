@@ -25,7 +25,7 @@ Mean formulas (s(x) denotes signal function):
     product_interaction: s(x) = gamma * sum_k(x_{2k-1} * x_{2k})
     dependent_features: s(x) = gamma * sum_j(z_j), with x_{2j-1}=z_j, x_{2j}=z_j+eps
     confounding: s(x) = gamma * sum_j(z_j), with x_j=z_j+eps (z_j unobserved)
-    quadratic: s(x) = gamma * sum(x_j^2)
+    quadratic: s(x) = gamma * sum(x_j^2 - 1)
 """
 import numpy as np
 import pandas as pd
@@ -243,14 +243,15 @@ def dependent_features(n, rng, cfg):
 
 @register("quadratic")
 def quadratic(n, rng, cfg):
-    """E[Y|x] = gamma * sum(x_j^2), x_j ~ N(0,1).
+    """E[Y|x] = gamma * sum(x_j^2 - 1), x_j ~ N(0,1).
 
     Signal features have zero marginal covariance with the response, Cov(x_j,
     y)=0, because (x_j) is symmetric about zero and the noise is independent.
     However, the response depends on these features through x_j^2, so they are
     relevant from functional, conditional, and causal views. This example comes
     from Zheng and Raskutti ("Comparing Model-agnostic Feature Selection Methods
-    through Relative Efficiency",Example 2.1.1).
+    through Relative Efficiency",Example 2.1.1). The "-1" recenters x_j^2 (whose
+    mean is 1) so the logit is zero-mean like the other DGPs.
     """
     n_nonnull, n_features, _ = _dim(cfg)
     signal = [rng.standard_normal(n) for _ in range(n_nonnull)]
@@ -260,7 +261,7 @@ def quadratic(n, rng, cfg):
     null_type = {f"x{j + 1}": ["marginal"] for j in range(n_nonnull)}
     meta = _build_meta(
         feature_names, n_nonnull, null_type,
-        equation=f"E[Y|x] = gamma * sum(x_1^2, ..., x_{n_nonnull}^2)",
+        equation=f"E[Y|x] = gamma * sum(x_1^2 - 1, ..., x_{n_nonnull}^2 - 1)",
         response_type=response_type, sigma_y=sigma_y,
         extra_meta={"gamma": cfg.get("gamma", 3.0)},
     )

@@ -25,7 +25,7 @@ $$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_{2j-1} = z_
 $$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_j = z_j + \epsilon \ \ (z_j \text{ unobserved})$$
 
 - Quadratic:
-$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} x_j^2, \quad x_j \sim \mathcal{N}(0,1)$$
+$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} (x_j^2 - 1), \quad x_j \sim \mathcal{N}(0,1)$$
 
 The null features $j \notin S$ are simulated from a random normal. Each data
 generation function takes a random seed to ensure reproducibility. The $\gamma$
