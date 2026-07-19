@@ -2,13 +2,22 @@
 
 ## Design
 
-This case study uses an established pretrained ResNet classifier for MNIST as the fixed prediction model for later local null-importance experiments. The download stage does not train a model. It pulls the pinned Hugging Face checkpoint configured in `config.yaml`, downloads the MNIST test set, and saves the artifacts needed by later prediction, sample-selection, and importance scripts.
+This case study uses an established pretrained ResNet classifier for MNIST as
+the fixed prediction model for later local null-importance experiments. The
+download stage does not train a model. It pulls the pinned Hugging Face
+checkpoint configured in `config.yaml`, downloads the MNIST test set, and saves
+the artifacts needed by later prediction, sample-selection, and importance
+scripts.
 
-The current checkpoint source is [`fxmarty/resnet-tiny-mnist`](https://huggingface.co/fxmarty/resnet-tiny-mnist), pinned by revision in `config.yaml`. The model source reports an evaluation accuracy of about 0.985 on MNIST.
+The current checkpoint source is
+[`fxmarty/resnet-tiny-mnist`](https://huggingface.co/fxmarty/resnet-tiny-mnist),
+pinned by revision in `config.yaml`. The model source reports an evaluation
+accuracy of about 0.985 on MNIST.
 
 ## Workflow
 
-To ensure all necessary packages are available, create and activate the case-study environment,
+To ensure all necessary packages are available, create and activate the
+case-study environment,
 
 ```bash
 conda env create -f environment.yaml
@@ -22,9 +31,22 @@ cd case_studies/mnist_resnet
 python download.py
 ```
 
-The main configuration is `config.yaml`. It controls the random seed, local data and results paths, Hugging Face cache path, model repo, pinned model revision, and download overwrite behavior. Hydra overrides can be used for one-off runs, for example,
+The main configuration is `config.yaml`. It controls the random seed, local data
+and results paths, Hugging Face cache path, model repo, pinned model revision,
+and download overwrite behavior. Hydra overrides can be used for one-off runs,
+for example,
 
 ```bash
 python download.py download.overwrite=true
 ```
+
+To select examples for the local null-importance analysis, use,
+
+```bash
+python select_samples.py
+```
+
+This writes `results/sample_meta.csv`, with 100 MNIST test examples: for each
+digit, 5 correctly classified examples and 5 misclassified examples, selected
+by the downloaded model's predicted probability.
 
