@@ -1,0 +1,39 @@
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+seed: 2026
+
+paths:
+  data_dir: data
+  results_dir: results
+  hf_cache_dir: data/huggingface_cache
+  model_path: results/model.pt
+  model_source_dir: results/model_source
+  download_metadata: results/download_metadata.yaml
+
+model:
+  # Public pretrained MNIST ResNet classifier:
+  # https://huggingface.co/fxmarty/resnet-tiny-mnist
+  repo_id: fxmarty/resnet-tiny-mnist
+  revision: d64012c39d4ea6fad998cca3bad7fbf7987709ef
+  checkpoint_file: pytorch_model.bin
+  source_url: https://huggingface.co/fxmarty/resnet-tiny-mnist/resolve/d64012c39d4ea6fad998cca3bad7fbf7987709ef/pytorch_model.bin
+  auxiliary_files:
+    - config.json
+    - preprocessor_config.json
+    - eval_results.json
+    - all_results.json
+
+data:
+  name: MNIST
+  split: test
+  train: false
+  labels_path: data/test_labels.csv
+
+download:
+  overwrite: false
+  local_files_only: false

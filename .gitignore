@@ -9,6 +9,9 @@ case_studies/drosophila/data/*
 case_studies/sweep_tabular/data/*
 case_studies/sweep_tabular/outputs/*
 case_studies/sweep_tabular/results/*
+case_studies/mnist_resnet/data/*
+case_studies/mnist_resnet/outputs/*
+case_studies/mnist_resnet/results/*
 outputs/*
 docs/*
 *DS_store
