@@ -1,4 +1,4 @@
-name: ni_mnist_resnet
+name: ni_case_studies
 channels:
   - conda-forge
   - defaults

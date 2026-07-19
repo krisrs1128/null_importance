@@ -20,14 +20,14 @@ To ensure all necessary packages are available, create and activate the
 case-study environment,
 
 ```bash
+cd case_studies/mnist_resnet
 conda env create -f environment.yaml
-conda activate ni_mnist_resnet
+conda activate ni_case_studies
 ```
 
 To download the pretrained model and MNIST test data, use,
 
 ```bash
-cd case_studies/mnist_resnet
 python download.py
 ```
 
@@ -49,4 +49,3 @@ python select_samples.py
 This writes `results/sample_meta.csv`, with 100 MNIST test examples: for each
 digit, 5 correctly classified examples and 5 misclassified examples, selected
 by the downloaded model's predicted probability.
-
