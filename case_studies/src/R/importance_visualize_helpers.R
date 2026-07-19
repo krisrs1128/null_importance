@@ -54,7 +54,13 @@ null_type_table <- function() {
             feature = paste0("x", 1:4),
             null_type = "Causal null"
         ),
-        noise_rows("confounding")
+        noise_rows("confounding"),
+        tibble(
+            dataset = "quadratic",
+            feature = paste0("x", 1:4),
+            null_type = "Marginal null"
+        ),
+        noise_rows("quadratic")
     )
 }
 

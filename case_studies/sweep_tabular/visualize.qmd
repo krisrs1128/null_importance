@@ -180,7 +180,7 @@ don't change when permuted.
 n_features <- length(FEATURE_ORDER)
 strip_y <- n_features + 0.9
 method_shapes <- setNames(
-    c(15, 16, 17, 18, 3, 4, 8)[seq_along(methods)], methods
+    c(15, 16, 17, 18, 3, 4, 8, 11)[seq_along(methods)], methods
 )
 
 ranks_by_dataset <- map(datasets, \(ds) {
