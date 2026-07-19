@@ -219,6 +219,50 @@ plot_facet_across_n("dependent_features", "regression", dependent_features_cols,
 
 ---
 
+## Quadratic
+
+**DGP:** E[Y|x] = γ·∑(x₁² − 1, …, xₙ² − 1)
+
+Each signal feature has zero marginal covariance with the response because the
+response depends only on xⱼ². However, the features are relevant from
+functional, conditional, and causal perspectives.
+
+```{r quadratic_setup, include=FALSE}
+quadratic_features <- c("x1", "x2", "x3", "x4", "noise_1")
+quadratic_classify <- ~ ifelse(.x == "noise_1", "Null", "Signal")
+quadratic_fill <- c(Signal = palette_overall["signal"], Null = palette_overall["null"])
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r quadratic_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("quadratic", "classification", quadratic_features)
+```
+
+```{r quadratic_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("quadratic", "classification", quadratic_features,
+    classify = quadratic_classify, fill_values = quadratic_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r quadratic_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("quadratic", "regression", quadratic_features)
+```
+
+```{r quadratic_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("quadratic", "regression", quadratic_features,
+    classify = quadratic_classify, fill_values = quadratic_fill, ns = sample_sizes
+)
+```
+
+:::
+
+---
+
 ## Confounding
 
 **DGP:** E[Y|z] = γ(z₁ + z₂ + ...), with x_j = z_j + ε (z_j unobserved)

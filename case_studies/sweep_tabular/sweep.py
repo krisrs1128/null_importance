@@ -77,6 +77,7 @@ def main(cfg: DictConfig):
                         "kcfg": cfg_dict["knockoffs"],
                         "grid_resolution": cfg.pdp.grid_resolution,
                         "ig_cfg": cfg_dict["integrated_gradients"],
+                        "gcm_cfg": cfg_dict["gcm"],
                     }
 
                     # run and save the explanations

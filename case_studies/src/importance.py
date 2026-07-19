@@ -7,9 +7,10 @@ import shap
 import knockpy
 from rf import fit_final
 from axiom_interp import presets
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import matthews_corrcoef as mcc_score
 from sklearn.inspection import permutation_importance as pi
-from scipy.stats import pointbiserialr, pearsonr
+from scipy.stats import pointbiserialr, pearsonr, norm as _norm
 from sklearn.inspection import partial_dependence as pd_func
 
 log = logging.getLogger(__name__)
@@ -153,6 +154,52 @@ def knockoff_scores(X_df, y, feature_names, kcfg, rng):
     for j, feat in enumerate(kept_features):
         result[feat] = w_stats[j]
     return result
+
+
+def _gcm_pvalue(x, y, z, seed_x, seed_y, n_estimators):
+    """Shah & Peters (2018) GCM test for x _||_ y | z.
+
+    This is adapted from dowhy.gcm.independence_test.generalised_cov_measure but
+    simplified to a fixed RandomForestRegressor.
+    """
+    # train models and get two sets of residuals
+    model_x = RandomForestRegressor(n_estimators=n_estimators, random_state=seed_x)
+    model_y = RandomForestRegressor(n_estimators=n_estimators, random_state=seed_y)
+    model_x.fit(z, x)
+    model_y.fit(z, y)
+    resid_x = x - model_x.predict(z)
+    resid_y = y - model_y.predict(z)
+
+    # compute test statistic from normalized product of residuals. See Eqn (3)
+    # from the Shah & Peters paper.
+    products = resid_x * resid_y
+    denom = np.std(products)
+    if denom == 0:
+        return 1.0
+    stat = (np.sum(products) / np.sqrt(len(x))) / denom
+    return 2 * _norm.sf(abs(stat))
+
+
+@register("gcm")
+def gcm_importance(X, y, feature_names, gcm_cfg, rng):
+    """GCM conditional-independence: X_j _||_ Y | X_{-j}.
+
+    We compute -log10(p-value) from the associated test. Larger values are
+    evidence of dependence.
+    """
+    n_estimators = gcm_cfg.get("n_estimators", 100)
+    y = np.asarray(y, dtype=float)
+    scores = np.zeros(X.shape[1])
+
+    # feature-by-feature retraining
+    for j in range(X.shape[1]):
+        z = np.delete(X, j, axis=1)
+        seed_x = int(rng.integers(1, 2**31))
+        seed_y = int(rng.integers(1, 2**31))
+        p_value = _gcm_pvalue(X[:, j], y, z, seed_x, seed_y, n_estimators)
+        scores[j] = -np.log10(max(p_value, 1e-300))
+
+    return pd.Series(scores, index=feature_names, name="gcm")
 
 
 @register("pdp_variance")

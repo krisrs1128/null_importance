@@ -45,3 +45,13 @@ def mean_product_interaction(cols, cfg):
     gamma = cfg.get("gamma", 3.0)
     n_pairs = len(cols) // 2
     return gamma * sum(cols[2*k] * cols[2*k + 1] for k in range(n_pairs))
+
+
+@register_mean("quadratic")
+def mean_quadratic(cols, cfg):
+    """mean = gamma * sum(c**2 - 1 for c in cols).
+
+    Recentered by E[c**2]=1 (c ~ N(0,1)) so the logit is zero-mean.
+    """
+    gamma = cfg.get("gamma", 3.0)
+    return gamma * sum(c**2 - 1 for c in cols)

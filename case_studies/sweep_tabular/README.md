@@ -24,6 +24,9 @@ $$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_{2j-1} = z_
 - Confounding:
 $$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_j = z_j + \epsilon \ \ (z_j \text{ unobserved})$$
 
+- Quadratic:
+$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} (x_j^2 - 1), \quad x_j \sim \mathcal{N}(0,1)$$
+
 The null features $j \notin S$ are simulated from a random normal. Each data
 generation function takes a random seed to ensure reproducibility. The $\gamma$
 and $\beta$ parameters are signal strengths that can be set through
@@ -41,8 +44,8 @@ $$
 
 For explanation, we consider marginal correlation (pearson for regression,
 biserial for classification), permutation importance, integrated gradients,
-knockoffs (from the `knockpy` package) KernelSHAP, minSHAP, and PDP (variance of
-the fitted profile). We aren't using MDI, TreeSHAP, or LOCO because our
+knockoffs (from the `knockpy` package) KernelSHAP, minSHAP, PDP (variance of the
+fitted profile), and GCM.  We aren't using MDI, TreeSHAP, or LOCO because our
 implementations assume a tree model and for this synthetic data experiment we
 treat the simulated mean response as the prediction.
 
@@ -133,4 +136,3 @@ only rerun those that are not present.
   more clearly as sample size increases.
 
 ![Correlation vs. knockoffs on dependent features](https://github.com/user-attachments/assets/a395ef4d-6498-4368-8196-cccabfc4cd29)
-
