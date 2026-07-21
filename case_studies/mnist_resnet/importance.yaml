@@ -1,0 +1,31 @@
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+seed: 2026
+
+paths:
+  data_dir: data
+  results_dir: results
+  model_path: results/model.pt
+  model_source_dir: results/model_source
+  sample_meta: results/sample_meta.csv
+  output_dir: results/importance
+
+model:
+  batch_size: 256
+
+explain:
+  # MNIST has 784 pixel features. One SHAP ordering requires about 785 model-value
+  # calls per sample, each averaged over the background rows. These defaults are
+  # intentionally small so the full 100-sample workflow is reproducible on CPU;
+  # increase them for more stable final estimates.
+  n_orderings: 5
+  n_background: 8
+  target: predicted_label
+
+run:
+  sample_limit: null
