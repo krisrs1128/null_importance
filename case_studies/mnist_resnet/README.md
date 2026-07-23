@@ -67,15 +67,14 @@ python importance.py
 
 The importance settings live in `importance.yaml`. The default
 `n_orderings` and `n_background` values are intentionally small because each
-MNIST image has 784 pixel features (with current config taking 30 minutes to finish).
+MNIST image has 784 pixel features (with current config taking 2 hours to finish).
 
-The local explanation files are saved in `results/importance/`. The SHAP and
-minSHAP files have one row per selected test example and one column per pixel
+The local explanation files are saved in `results/importance/`. The attribution files have one row per selected test example and one column per pixel
 feature, `pixel_0` through `pixel_783`. For readability, the examples below
 show the metadata columns, the first few pixel columns, and the last pixel
 column.
 
-`shap_attributions.csv` has the form,
+For example, `shap_attributions.csv` has the form,
 
 ```csv
 sample_index,true_label,predicted_label,predicted_probability,correct,target_label,pixel_0,pixel_1,pixel_2,pixel_783
@@ -84,11 +83,3 @@ sample_index,true_label,predicted_label,predicted_probability,correct,target_lab
 7703,0,0,0.999810755252838,True,0,-0.0133678028243593,-0.0542421123245731,0.0023948723217472,-0.0097468154272064
 ```
 
-`minshap_attributions.csv` has the same columns,
-
-```csv
-sample_index,true_label,predicted_label,predicted_probability,correct,target_label,pixel_0,pixel_1,pixel_2,pixel_783
-7607,0,0,0.9998399019241332,True,0,-0.0096338709117844,-0.0721206665039062,-0.0090842805802822,-0.0162796499207615
-2385,0,0,0.9998200535774232,True,0,-0.1522493362426757,-0.0047911708243191,-0.0116430539637804,-0.1110722194425761
-7703,0,0,0.999810755252838,True,0,-0.1862225532531738,-0.2454226016998291,-0.0215538293123245,-0.047044270671904
-```
