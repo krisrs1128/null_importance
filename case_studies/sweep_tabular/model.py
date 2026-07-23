@@ -52,6 +52,11 @@ def _score_dependent_features(X_df, cfg):
     return MEAN_FNS["dependent_features"](cols, cfg)
 
 
+@register_score("highly_correlated_dependent")
+def _score_highly_correlated_dependent(X_df, cfg):
+    return _score_dependent_features(X_df, cfg)
+
+
 @register_score("quadratic")
 def _score_quadratic(X_df, cfg):
     n_nonnull = cfg["n_nonnull"]

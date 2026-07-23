@@ -50,6 +50,14 @@ null_type_table <- function() {
         ),
         noise_rows("dependent_features"),
         tibble(
+            dataset = "highly_correlated_dependent",
+            feature = c("x1", "x2", "x3", "x4"),
+            null_type = c(
+                "Signal", "Conditional null", "Signal", "Conditional null"
+            )
+        ),
+        noise_rows("highly_correlated_dependent"),
+        tibble(
             dataset = "confounding",
             feature = paste0("x", 1:4),
             null_type = "Causal null"

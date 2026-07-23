@@ -241,6 +241,12 @@ def dependent_features(n, rng, cfg):
     return _make_df(signal + noise, feature_names), y, feature_names, meta
 
 
+@register("highly_correlated_dependent")
+def highly_correlated_dependent(n, rng, cfg):
+    """Same DGP as dependent_features, but with near-perfect anchor/proxy correlation."""
+    return dependent_features(n, rng, cfg)
+
+
 @register("quadratic")
 def quadratic(n, rng, cfg):
     """E[Y|x] = gamma * sum(x_j^2 - 1), x_j ~ N(0,1).
