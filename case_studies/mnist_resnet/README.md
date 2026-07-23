@@ -69,6 +69,26 @@ The importance settings live in `importance.yaml`. The default
 `n_orderings` and `n_background` values are intentionally small because each
 MNIST image has 784 pixel features (with current config taking 2 hours to finish).
 
+### Importance Methods
+
+Each method produces one local score for each of the 784 pixels in a selected
+MNIST test image.
+
+- **SHAP:** Treats pixels as features. Missing pixels are replaced using
+  background training images, and the score estimates each pixel's marginal
+  contribution to the ResNet probability for the target class.
+
+- **minSHAP:** Uses the same marginal-contribution tensor as SHAP, but changes
+  the aggregation rule to the minSHAP rule.
+
+- **Integrated gradients:** Uses a zero image as the baseline, follows the path
+  from that zero image to the selected image, and attributes the target-class
+  probability change to individual pixels.
+
+- **Local t-statistic:** Finds the nearest background images in pixel space,
+  splits them by whether the ResNet predicts the same class as the selected
+  image, and computes a per-pixel t-statistic between those two local groups.
+
 The local explanation files are saved in `results/importance/`. The attribution files have one row per selected test example and one column per pixel
 feature, `pixel_0` through `pixel_783`. For readability, the examples below
 show the metadata columns, the first few pixel columns, and the last pixel
@@ -82,4 +102,3 @@ sample_index,true_label,predicted_label,predicted_probability,correct,target_lab
 2385,0,0,0.9998200535774232,True,0,-0.0258322871290147,0.016603519860655,0.0647321720607578,-0.0252399119315668
 7703,0,0,0.999810755252838,True,0,-0.0133678028243593,-0.0542421123245731,0.0023948723217472,-0.0097468154272064
 ```
-
