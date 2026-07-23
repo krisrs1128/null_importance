@@ -1,0 +1,42 @@
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+seed: 2026
+
+paths:
+  data_dir: data
+  results_dir: results
+  model_path: results/model.pt
+  model_source_dir: results/model_source
+  sample_meta: results/sample_meta.csv
+  output_dir: results/importance
+
+model:
+  batch_size: 256
+
+explain:
+  # MNIST has 784 pixel features. One SHAP ordering requires about 785 model-value
+  # calls per sample, each averaged over the background rows. These defaults are
+  # still modest so the full 100-sample workflow is reproducible on CPU.
+  n_orderings: 5
+  # The same background pool is also used by the 20-nearest-neighbor t-statistic.
+  n_background: 20
+  target: predicted_label
+
+integrated_gradients:
+  # The preset uses finite-difference gradients over 784 pixels, so keep this
+  # small unless running on faster hardware.
+  n_steps: 2
+  eps: 0.0001
+
+local_ttest:
+  distance: pixel_l2
+  n_neighbors: 20
+  min_group_size: 2
+
+run:
+  sample_limit: null

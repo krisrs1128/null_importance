@@ -5,13 +5,15 @@ channels:
 dependencies:
   - python=3.11
   - pip
-  - numpy<2
-  - pandas
+  - numpy>=1.26,<2
+  - pandas<3
   - scikit-learn
   - scipy
   - pyarrow
   - pillow
   - pip:
+      - numpy<2
+      - cvxpy<1.7
       - hydra-core
       - omegaconf
       - torch
