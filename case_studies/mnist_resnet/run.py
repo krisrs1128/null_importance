@@ -77,11 +77,20 @@ def main(cfg: DictConfig) -> None:
     methods = enabled_methods(cfg)
     if "local_ttest" in methods and str(cfg.local_ttest.distance) != "pixel_l2":
         raise ValueError("local_ttest.distance currently supports only 'pixel_l2'")
+    if "local_ttest" in methods and int(cfg.local_ttest.n_pool) < int(
+        cfg.local_ttest.n_neighbors
+    ):
+        raise ValueError("local_ttest.n_pool must be at least local_ttest.n_neighbors")
 
     rng = np.random.default_rng(seed)
     results_dir = case_path(cfg.paths.results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
-    sample_meta, X, background, background_idx = importance.load_inputs(cfg, rng)
+    (
+        sample_meta,
+        X,
+        shap_background,
+        ttest_pool,
+    ) = importance.load_inputs(cfg, rng)
     model = MNISTResNetFlat.from_downloaded(
         model_source_dir=case_path(cfg.paths.model_source_dir),
         model_path=case_path(cfg.paths.model_path),
@@ -91,7 +100,7 @@ def main(cfg: DictConfig) -> None:
     attributions = importance.attribute(
         X=X,
         sample_meta=sample_meta,
-        background=background,
+        background=shap_background,
         model=model,
         n_orderings=int(cfg.explain.n_orderings),
         ig_steps=int(cfg.integrated_gradients.n_steps),
@@ -99,21 +108,20 @@ def main(cfg: DictConfig) -> None:
         seed=seed,
     )
 
-    background_probs = model.predict_proba(background)
-    background_pred = background_probs.argmax(axis=1)
     if "local_ttest" in methods:
-        ttest_scores, neighbor_df = local_ttest_scores(
+        ttest_pool_probs = model.predict_proba(ttest_pool)
+        ttest_pool_pred = ttest_pool_probs.argmax(axis=1)
+        ttest_scores = local_ttest_scores(
             X=X,
-            background=background,
-            background_predicted_label=background_pred,
+            background=ttest_pool,
+            background_predicted_label=ttest_pool_pred,
             sample_predicted_label=sample_meta["predicted_label"].to_numpy(dtype=int),
-            sample_index=sample_meta["sample_index"].to_numpy(dtype=int),
-            background_index=background_idx,
             n_neighbors=int(cfg.local_ttest.n_neighbors),
             min_group_size=int(cfg.local_ttest.min_group_size),
         )
-        attributions["local_ttest"] = importance.attribution_frame(sample_meta, ttest_scores)
-        neighbor_df.to_csv(results_dir / "local_ttest_neighbors.csv", index=False)
+        attributions["local_ttest"] = importance.attribution_frame(
+            sample_meta, ttest_scores
+        )
 
     pixel_cols = pixel_feature_names()
     output_files = {}
@@ -127,13 +135,6 @@ def main(cfg: DictConfig) -> None:
     pd.DataFrame({"pixel_index": pixels, "row": pixels // 28, "col": pixels % 28}).to_csv(
         results_dir / "pixel_feature_map.csv", index=False
     )
-    pd.DataFrame(
-        {
-            "background_index": background_idx,
-            "predicted_label": background_pred,
-            "predicted_probability": background_probs.max(axis=1),
-        }
-    ).to_csv(results_dir / "background_meta.csv", index=False)
 
     metadata = {
         "seed": seed,
@@ -145,7 +146,10 @@ def main(cfg: DictConfig) -> None:
             "output_files": output_files,
             "n_samples": int(len(sample_meta)),
             "n_features": len(pixel_cols),
-            "n_background": int(len(background)),
+            "n_background": int(len(shap_background)),
+            "n_local_ttest_pool": (
+                int(len(ttest_pool)) if "local_ttest" in methods else 0
+            ),
             "n_orderings": int(cfg.explain.n_orderings),
             "integrated_gradients": OmegaConf.to_container(
                 cfg.integrated_gradients, resolve=True
