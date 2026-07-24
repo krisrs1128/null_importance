@@ -16,8 +16,7 @@ accuracy of about 0.985 on MNIST.
 
 ## Workflow
 
-To ensure all necessary packages are available, create and activate the
-case-study environment,
+To use the case-study environment,
 
 ```bash
 cd case_studies/mnist_resnet
@@ -25,30 +24,34 @@ conda env create -f environment.yaml
 conda activate ni_case_studies
 ```
 
-To download the pretrained model and MNIST test data, use,
+The main entry point is `run.py`. To run the full workflow, use,
 
 ```bash
-python download.py
+python run.py
 ```
 
-The main configuration is `config.yaml`. It controls the random seed, local data
-and results paths, Hugging Face cache path, model repo, pinned model revision,
-and download overwrite behavior. Hydra overrides can be used for one-off runs,
-for example,
+`run.py` uses `importance.yaml` for the seed, paths, model batch size, and
+importance settings. It also reuses `config.yaml` for the pinned model source.
+
+The run does the following:
+
+- Downloads or reuses the pretrained ResNet checkpoint and MNIST data.
+- Scores the MNIST test set and writes the selected-sample metadata.
+- Samples flattened MNIST training images as the background/reference set.
+- Computes the enabled local importance methods and writes the results to
+  `results/`.
+
+To spend more compute on SHAP/minSHAP Monte Carlo orderings and use a larger
+background set, use Hydra overrides,
 
 ```bash
-python download.py download.overwrite=true
+python run.py explain.n_orderings=20 explain.n_background=50
 ```
 
-To select examples for the local null-importance analysis, use,
-
-```bash
-python select_samples.py
-```
-
-This writes `results/sample_meta.csv`, with 100 MNIST test examples: for each
-digit from 0-9, 5 correctly classified examples and 5 misclassified examples, selected
-by the downloaded model's predicted probability. The first few rows have the form,
+The selection stage writes `results/sample_meta.csv`, with 100 MNIST test
+examples: for each digit from 0-9, 5 correctly classified examples and 5
+misclassified examples, selected by the downloaded model's predicted
+probability. The first few rows have the form,
 
 ```csv
 sample_index,true_label,predicted_label,predicted_probability,correct
@@ -59,15 +62,10 @@ sample_index,true_label,predicted_label,predicted_probability,correct
 7727,0,0,0.9997738003730774,True
 ```
 
-To compute pixel-level SHAP and minSHAP importances for those examples, use,
-
-```bash
-python importance.py
-```
-
-The importance settings live in `importance.yaml`. The default
-`n_orderings` and `n_background` values are intentionally small because each
-MNIST image has 784 pixel features (with current config taking 2 hours to finish).
+The local explanation files are saved as `results/{method}_attributions.csv`.
+Each attribution file has one row per selected test example and one column per
+pixel feature, `pixel_0` through `pixel_783`; row order matches
+`results/sample_meta.csv`.
 
 ### Importance Methods
 
@@ -89,16 +87,20 @@ MNIST test image.
   splits them by whether the ResNet predicts the same class as the selected
   image, and computes a per-pixel t-statistic between those two local groups.
 
-The local explanation files are saved in `results/importance/`. The attribution files have one row per selected test example and one column per pixel
-feature, `pixel_0` through `pixel_783`. For readability, the examples below
-show the metadata columns, the first few pixel columns, and the last pixel
-column.
+The default `n_orderings` and `n_background` values are moderate because each
+MNIST image has 784 pixel features. Increase `n_orderings` first when the
+runtime budget allows, and keep `n_background >= local_ttest.n_neighbors` for
+the 20-nearest-neighbor t-statistic.
+
+For readability, the examples below show only the first few pixel columns and
+the last pixel column.
 
 For example, `shap_attributions.csv` has the form,
 
 ```csv
-sample_index,true_label,predicted_label,predicted_probability,correct,target_label,pixel_0,pixel_1,pixel_2,pixel_783
-7607,0,0,0.9998399019241332,True,0,0.0038487184792757,-0.0089938039891421,0.0213100811699405,-0.0058836719428654
-2385,0,0,0.9998200535774232,True,0,-0.0258322871290147,0.016603519860655,0.0647321720607578,-0.0252399119315668
-7703,0,0,0.999810755252838,True,0,-0.0133678028243593,-0.0542421123245731,0.0023948723217472,-0.0097468154272064
+pixel_0,pixel_1,pixel_2,pixel_783
+-0.0449809268116951,0.019151636958122255,0.07923728227615356,-0.060081002116203305
+-0.022464396059513093,-0.023283451795578003,0.033800172805786136,-0.008888739347457885
+0.041246681660413745,-0.018755125999450683,0.03381760716438294,-0.00964224487543106
 ```
+

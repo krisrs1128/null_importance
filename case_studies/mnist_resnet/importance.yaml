@@ -13,7 +13,6 @@ paths:
   model_path: results/model.pt
   model_source_dir: results/model_source
   sample_meta: results/sample_meta.csv
-  output_dir: results/importance
 
 model:
   batch_size: 256
