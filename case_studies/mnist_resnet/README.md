@@ -83,7 +83,7 @@ pixel_0,pixel_1,pixel_2,pixel_783
 ```
 
 
-### Importance Methods
+## Importance Methods
 
 Each method produces one local score for each of the 784 pixels in a selected
 MNIST test image.
