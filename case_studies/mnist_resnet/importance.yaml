@@ -19,11 +19,9 @@ model:
 
 explain:
   # MNIST has 784 pixel features. One SHAP ordering requires about 785 model-value
-  # calls per sample, each averaged over the background rows. These defaults are
-  # still modest so the full 100-sample workflow is reproducible on CPU.
+  # calls per sample, each averaged over these SHAP/minSHAP background rows.
   n_orderings: 5
-  # The same background pool is also used by the 20-nearest-neighbor t-statistic.
-  n_background: 20
+  n_background: 10
   target: predicted_label
 
 integrated_gradients:
@@ -34,6 +32,8 @@ integrated_gradients:
 
 local_ttest:
   distance: pixel_l2
+  # Candidate pool for nearest-neighbor search; separate from SHAP/minSHAP background.
+  n_pool: 200
   n_neighbors: 20
   min_group_size: 2
 

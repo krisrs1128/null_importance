@@ -36,8 +36,18 @@ def attribution_frame(sample_meta: pd.DataFrame, scores: np.ndarray) -> pd.DataF
     return pd.concat([meta, pd.DataFrame(scores, columns=pixel_feature_names())], axis=1)
 
 
+def _sample_training_rows(
+    X_train: np.ndarray,
+    rng: np.random.Generator,
+    n_rows: int,
+) -> np.ndarray:
+    n_rows = min(int(n_rows), len(X_train))
+    row_idx = rng.choice(len(X_train), n_rows, replace=False)
+    return X_train[row_idx]
+
+
 def load_inputs(cfg: DictConfig, rng: np.random.Generator):
-    """Load the 100 selected test rows plus a random flattened training background."""
+    """Load selected test rows plus separate training pools for each method."""
     sample_meta = pd.read_csv(case_path(cfg.paths.sample_meta))
     if cfg.run.sample_limit is not None:
         sample_meta = sample_meta.head(int(cfg.run.sample_limit)).copy()
@@ -46,12 +56,17 @@ def load_inputs(cfg: DictConfig, rng: np.random.Generator):
     data_dir = case_path(cfg.paths.data_dir)
     X_test, _ = load_mnist_flat(data_dir, train=False)
     X_train, _ = load_mnist_flat(data_dir, train=True)
-    n_background = min(int(cfg.explain.n_background), len(X_train))
-    background_idx = rng.choice(len(X_train), n_background, replace=False)
+    shap_background = _sample_training_rows(X_train, rng, int(cfg.explain.n_background))
+    ttest_pool = _sample_training_rows(X_train, rng, int(cfg.local_ttest.n_pool))
 
     sample_meta = sample_meta.reset_index(drop=True)
     sample_idx = sample_meta["sample_index"].to_numpy(dtype=int)
-    return sample_meta, X_test[sample_idx], X_train[background_idx], background_idx
+    return (
+        sample_meta,
+        X_test[sample_idx],
+        shap_background,
+        ttest_pool,
+    )
 
 
 def attribute(
