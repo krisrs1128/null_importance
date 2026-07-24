@@ -162,6 +162,12 @@ def main(cfg: DictConfig) -> None:
     OmegaConf.save(OmegaConf.create(metadata), metadata_path_out)
     log.info("Wrote %s", metadata_path_out)
 
+    hydra_metadata_path = (
+        Path(run_metadata["hydra_output_dir"]) / ".hydra" / "run_metadata.yaml"
+    )
+    OmegaConf.save(OmegaConf.create(metadata), hydra_metadata_path)
+    log.info("Wrote %s", hydra_metadata_path)
+
 
 if __name__ == "__main__":
     main()
