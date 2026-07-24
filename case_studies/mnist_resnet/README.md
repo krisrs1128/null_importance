@@ -67,7 +67,23 @@ Each attribution file has one row per selected test example and one column per
 pixel feature, `pixel_0` through `pixel_783`; row order matches
 `results/sample_meta.csv`.
 
-### Importance Methods
+The default `n_orderings` and `n_background` values are moderate because each
+MNIST image has 784 pixel features. Increase `n_orderings` first when the
+runtime budget allows, and keep `n_background >= local_ttest.n_neighbors` for
+the 20-nearest-neighbor t-statistic.
+
+For readability, the example `shap_attributions.csv` shows only the first few pixel columns and
+the last pixel column.
+
+```csv
+pixel_0,pixel_1,pixel_2,pixel_783
+-0.0449809268116951,0.019151636958122255,0.07923728227615356,-0.060081002116203305
+-0.022464396059513093,-0.023283451795578003,0.033800172805786136,-0.008888739347457885
+0.041246681660413745,-0.018755125999450683,0.03381760716438294,-0.00964224487543106
+```
+
+
+## Importance Methods
 
 Each method produces one local score for each of the 784 pixels in a selected
 MNIST test image.
@@ -86,21 +102,4 @@ MNIST test image.
 - **Local t-statistic:** Finds the nearest background images in pixel space,
   splits them by whether the ResNet predicts the same class as the selected
   image, and computes a per-pixel t-statistic between those two local groups.
-
-The default `n_orderings` and `n_background` values are moderate because each
-MNIST image has 784 pixel features. Increase `n_orderings` first when the
-runtime budget allows, and keep `n_background >= local_ttest.n_neighbors` for
-the 20-nearest-neighbor t-statistic.
-
-For readability, the examples below show only the first few pixel columns and
-the last pixel column.
-
-For example, `shap_attributions.csv` has the form,
-
-```csv
-pixel_0,pixel_1,pixel_2,pixel_783
--0.0449809268116951,0.019151636958122255,0.07923728227615356,-0.060081002116203305
--0.022464396059513093,-0.023283451795578003,0.033800172805786136,-0.008888739347457885
-0.041246681660413745,-0.018755125999450683,0.03381760716438294,-0.00964224487543106
-```
 
