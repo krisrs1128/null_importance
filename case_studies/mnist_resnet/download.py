@@ -146,12 +146,14 @@ def download_mnist_test(cfg: DictConfig) -> dict:
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg: DictConfig) -> None:
-    _set_seed(int(cfg.seed))
+    seed = int(cfg.seed)
+    _set_seed(seed)
 
     # Record the exact code/config context that produced model.pt and data/.
     run_metadata = capture_run_metadata(_script_dir)
     log.info(
-        "Running with git_commit=%s; hydra config at %s",
+        "Running with seed=%s, git_commit=%s; hydra config at %s",
+        seed,
         run_metadata["git_commit"],
         run_metadata["hydra_output_dir"],
     )
@@ -160,7 +162,7 @@ def main(cfg: DictConfig) -> None:
     data_metadata = download_mnist_test(cfg)
 
     metadata = {
-        "seed": int(cfg.seed),
+        "seed": seed,
         "model": model_metadata,
         "data": data_metadata,
         **run_metadata,
