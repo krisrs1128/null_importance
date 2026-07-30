@@ -10,7 +10,7 @@ library(fs)
 #' with warm ivory as the visual zero.
 axiom_palette <- list(
     ink = "#2A2724",
-    bg = "#FBFAF7",
+    bg = "#FFFFFF",
     grid = "#E2DBD4",
     accent = "#066AE5",
     diverging = c("#0433DC", "#049fdc", "#E2DBD4", "#fb315d", "#dc0433")
