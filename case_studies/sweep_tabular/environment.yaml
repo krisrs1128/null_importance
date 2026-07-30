@@ -14,3 +14,4 @@ dependencies:
       - omegaconf
       - shap
       - knockpy
+      - xgboost

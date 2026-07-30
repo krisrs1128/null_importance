@@ -12,7 +12,7 @@ generation from the minSHAP paper. These include,
 
 $$\mu(x) = \beta \sum_{j \in \mathcal{S}} x_j$$
 
-- XOR/parity function:
+- Parity function:
 $$\mu(x) = -\gamma \prod_{j \in \mathcal{S}} \text{sign}(x_j), \quad x_j \sim U[-1,1]$$
 
 - Product:
@@ -24,8 +24,11 @@ $$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_{2j-1} = z_
 - Confounding:
 $$\mu(x) = \gamma \sum_{j \in \mathcal{S}} z_j, \quad \text{with } x_j = z_j + \epsilon \ \ (z_j \text{ unobserved})$$
 
+- Mediated chains: $$x_{k,j}=x_{k,j-1}+\tau\epsilon_{k,j}, \qquad
+\mu(x)=\frac{\gamma}{\sqrt q}\sum_{k=1}^q x_{k,\mathrm{terminal}}.
+
 - Quadratic:
-$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} (x_j^2 - 1), \quad x_j \sim \mathcal{N}(0,1)$$
+$$\mu(x) = \gamma \sum_{j \in \mathcal{S}} (x_j^2 - 1)$$
 
 The null features $j \notin S$ are simulated from a random normal. Each data
 generation function takes a random seed to ensure reproducibility. The $\gamma$
@@ -44,8 +47,10 @@ $$
 
 For explanation, we consider marginal correlation (pearson for regression,
 biserial for classification), permutation importance, integrated gradients,
-knockoffs (from the `knockpy` package) KernelSHAP, minSHAP, PDP (variance of the
-fitted profile), and GCM.  We aren't using MDI, TreeSHAP, or LOCO because our
+knockoffs (from the `knockpy` package), minSHAP, SAGE, PDP (variance of the
+fitted profile), and GCM. minSHAP and SAGE are both implemented using `V(S) =
+-E[l(Y, f_S(X_S))]`, where teh loss comes from an XGBoost model based on
+features $X_{S}$.  We aren't using MDI, TreeSHAP, or LOCO because our
 implementations assume a tree model and for this synthetic data experiment we
 treat the simulated mean response as the prediction.
 
@@ -126,7 +131,7 @@ only rerun those that are not present.
 
 - **Importance Rankings:** This figure ranks features for the `n = 500`
   classification runs. Linear additive data gives stable signal-first rankings,
-  while XOR, interactions, dependence, and confounding create more disagreement.
+  while parity, interactions, dependence, and confounding create more disagreement.
 
 ![Importance Rankings](https://github.com/user-attachments/assets/aad4be1e-7f5b-4310-ba12-1216ef10d91d)
 

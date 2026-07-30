@@ -30,11 +30,11 @@ null_type_table <- function() {
         ),
         noise_rows("linear_additive"),
         tibble(
-            dataset = "xor",
+            dataset = "parity",
             feature = paste0("x", 1:4),
             null_type = "Marginal null"
         ),
-        noise_rows("xor"),
+        noise_rows("parity"),
         tibble(
             dataset = "product_interaction",
             feature = paste0("x", 1:4),
@@ -57,6 +57,14 @@ null_type_table <- function() {
             )
         ),
         noise_rows("highly_correlated_dependent"),
+        tibble(
+            dataset = "mediated_chains",
+            feature = c("x1", "x2", "x3", "x4"),
+            null_type = c(
+                "Conditional null", "Signal", "Conditional null", "Signal"
+            )
+        ),
+        noise_rows("mediated_chains"),
         tibble(
             dataset = "confounding",
             feature = paste0("x", 1:4),

@@ -21,15 +21,16 @@ and regression
 
 Mean formulas (s(x) denotes signal function):
     linear_additive: s(x) = beta * sum(x_j)
-    xor: s(x) = -gamma * prod(sign(x_j)), x_j ∈ U[-1,1]
+    parity: s(x) = -gamma * prod(sign(x_j)), x_j ∈ U[-1,1]
     product_interaction: s(x) = gamma * sum_k(x_{2k-1} * x_{2k})
     dependent_features: s(x) = gamma * sum_j(z_j), with x_{2j-1}=z_j, x_{2j}=z_j+eps
+    mediated_chains: x_j=x_{j-1}+eps within chains; s(x) uses each terminal
     confounding: s(x) = gamma * sum_j(z_j), with x_j=z_j+eps (z_j unobserved)
     quadratic: s(x) = gamma * sum(x_j^2 - 1)
 """
 import numpy as np
 import pandas as pd
-from means import MEAN_FNS
+from means import MEAN_FNS, chain_terminal_indices
 
 DATASETS = {}
 
@@ -129,6 +130,52 @@ def _build_meta(feature_names, n_nonnull, null_type, equation, response_type, si
 
 
 # ---------------------------------------------------------------------------
+# Mediated chains helpers
+# ---------------------------------------------------------------------------
+
+def _build_chain_signal(n, n_nonnull, chain_length, transition_noise, rng):
+    """Build independent directed chains of correlated features.
+
+    Each chain starts from an independent N(0,1) draw and propagates with
+    additive Gaussian noise at each step.
+
+    Returns
+    -------
+    list of np.ndarray
+        Signal columns in feature order (all chain elements concatenated).
+    """
+    signal = []
+    for start in range(0, n_nonnull, chain_length):
+        current = rng.standard_normal(n)
+        signal.append(current)
+        stop = min(start + chain_length, n_nonnull)
+        for _ in range(start + 1, stop):
+            current = current + transition_noise * rng.standard_normal(n)
+            signal.append(current)
+    return signal
+
+
+def _build_chain_null_type(n_nonnull, terminal_indices):
+    """Build null_type for mediated_chains.
+
+    Terminal nodes are non-null ([]); internal chain nodes are
+    conditionally null (["conditional"]).
+    """
+    return {
+        f"x{j + 1}": ([] if j in terminal_indices else ["conditional"])
+        for j in range(n_nonnull)
+    }
+
+
+def _compute_chain_lengths(n_nonnull, chain_length):
+    """Actual lengths of each chain (last chain may be shorter)."""
+    return [
+        min(chain_length, n_nonnull - start)
+        for start in range(0, n_nonnull, chain_length)
+    ]
+
+
+# ---------------------------------------------------------------------------
 # DGP functions
 # ---------------------------------------------------------------------------
 
@@ -151,8 +198,8 @@ def linear_additive(n, rng, cfg):
     return _make_df(signal + noise, feature_names), y, feature_names, meta
 
 
-@register("xor")
-def xor(n, rng, cfg):
+@register("parity")
+def parity(n, rng, cfg):
     """E[Y|x] = -gamma * prod(sign(x_j)), x_j ~ U[-1,1].
 
     Signal columns are marginally but not functionally null: E[Y|x_j] doesn't
@@ -163,7 +210,7 @@ def xor(n, rng, cfg):
     n_nonnull, n_features, _ = _dim(cfg)
     signal = [rng.uniform(-1.0, 1.0, size=n) for _ in range(n_nonnull)]
 
-    noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "xor", signal)
+    noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "parity", signal)
     feature_names = _make_feature_names(n_nonnull, n_features)
     null_type = {f"x{j + 1}": ["marginal"] for j in range(n_nonnull)}
     meta = _build_meta(
@@ -245,6 +292,49 @@ def dependent_features(n, rng, cfg):
 def highly_correlated_dependent(n, rng, cfg):
     """Same DGP as dependent_features, but with near-perfect anchor/proxy correlation."""
     return dependent_features(n, rng, cfg)
+
+
+@register("mediated_chains")
+def mediated_chains(n, rng, cfg):
+    """Several independent directed chains whose terminal nodes determine Y.
+
+    This follows Example 2.1 in arXiv:2604.15107v2
+    """
+    # extract relevant parameters
+    n_nonnull, n_features, _ = _dim(cfg)
+    chain_length = cfg.get("chain_length", 2)
+    transition_noise = cfg.get("transition_noise", 1.0)
+    terminal_indices = chain_terminal_indices(n_nonnull, chain_length)
+
+    # create the features and response
+    signal = _build_chain_signal(n, n_nonnull, chain_length, transition_noise, rng)
+    terminals = [signal[j] for j in terminal_indices]
+    noise, y, response_type, sigma_y = _simulate_response(
+        n, rng, cfg, "mediated_chains", terminals
+    )
+
+    # metadata about real vs. null features in the chain example
+    feature_names = _make_feature_names(n_nonnull, n_features)
+    null_type = _build_chain_null_type(n_nonnull, terminal_indices)
+    chain_lengths = _compute_chain_lengths(n_nonnull, chain_length)
+    terminal_names = [f"x{j + 1}" for j in terminal_indices]
+    meta = _build_meta(
+        feature_names, n_nonnull, null_type,
+        equation=(
+            "Within each chain x_j=x_{j-1}+tau*eps; "
+            "E[Y|x] = gamma/sqrt(n_chains) * sum(chain terminals)"
+        ),
+        response_type=response_type, sigma_y=sigma_y,
+        extra_meta={
+            "gamma": cfg.get("gamma", 3.0),
+            "chain_length": chain_length,
+            "chain_lengths": chain_lengths,
+            "transition_noise": transition_noise,
+            "terminal_features": terminal_names,
+            "n_chains": len(terminal_indices),
+        },
+    )
+    return _make_df(signal + noise, feature_names), y, feature_names, meta
 
 
 @register("quadratic")

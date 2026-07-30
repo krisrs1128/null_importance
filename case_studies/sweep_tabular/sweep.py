@@ -49,6 +49,9 @@ def main(cfg: DictConfig):
     for seed in cfg.seeds:
         rng = np.random.default_rng(seed)
         for name in DATASETS:
+            if name not in cfg_dict["datasets"]:
+                log.info(f"Skipping {name}: no entry in config datasets")
+                continue
             base_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
             for rt in cfg.response_types:
                 dataset_cfg = {**base_cfg, "response_type": rt}
@@ -71,8 +74,7 @@ def main(cfg: DictConfig):
                         "rng": rng, "seed": seed,
                         "response_type": rt,
                         "n_repeats": cfg.permutation.n_repeats,
-                        "mcfg": cfg_dict["minshap"],
-                        "kshap_cfg": cfg_dict["kernelshap"],
+                        "risk_cfg": cfg_dict["risk"],
                         "cfg": cfg_dict,
                         "kcfg": cfg_dict["knockoffs"],
                         "grid_resolution": cfg.pdp.grid_resolution,
@@ -84,6 +86,13 @@ def main(cfg: DictConfig):
                     for method, fn in METHODS.items():
                         if not cfg.methods[method]:
                             continue
+
+                        # skip if previously run
+                        result_path = results_dir / f"{name}_{n}_{rt}_{seed}_{method}.csv"
+                        if result_path.exists():
+                            log.info(f"Skipping {name}_{n}_{rt}_{seed}_{method} — result already exists")
+                            continue
+
                         log.info(f"Computing {name}_{n}_{rt}_{seed}_{method}...")
                         sig = inspect.signature(fn)
                         result = fn(**{p: ctx[p] for p in sig.parameters})

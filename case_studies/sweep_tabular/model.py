@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 
-from means import MEAN_FNS
+from means import MEAN_FNS, chain_terminal_indices
 
 SCORES = {}
 
@@ -29,11 +29,11 @@ def _score_linear_additive(X_df, cfg):
     return MEAN_FNS["linear_additive"](cols, cfg)
 
 
-@register_score("xor")
-def _score_xor(X_df, cfg):
+@register_score("parity")
+def _score_parity(X_df, cfg):
     n_nonnull = cfg["n_nonnull"]
     cols = [X_df[f"x{j + 1}"] for j in range(n_nonnull)]
-    return MEAN_FNS["xor"](cols, cfg)
+    return MEAN_FNS["parity"](cols, cfg)
 
 
 @register_score("product_interaction")
@@ -55,6 +55,15 @@ def _score_dependent_features(X_df, cfg):
 @register_score("highly_correlated_dependent")
 def _score_highly_correlated_dependent(X_df, cfg):
     return _score_dependent_features(X_df, cfg)
+
+
+@register_score("mediated_chains")
+def _score_mediated_chains(X_df, cfg):
+    terminal_indices = chain_terminal_indices(
+        cfg["n_nonnull"], cfg.get("chain_length", 2)
+    )
+    cols = [X_df[f"x{j + 1}"] for j in terminal_indices]
+    return MEAN_FNS["mediated_chains"](cols, cfg)
 
 
 @register_score("quadratic")

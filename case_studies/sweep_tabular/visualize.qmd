@@ -62,7 +62,7 @@ Blocking by sample size keeps any one sample size from dominating the
 projection. Panels are sorted by the variance explained by the first axis, which
 separates signal from noise features.  For `dependent_features`, where true
 "anchors" are correlated with irrelevant "proxies", correlation clearly fails.
-Knockoffs and correlation both struggle on `product_interaction` and `xor`,
+Knockoffs and correlation both struggle on `product_interaction` and `parity`,
 which isn't surprising given the nonlinear structure.
 
 ```{r mfa-compute}
@@ -134,33 +134,41 @@ ggsave(
 )
 ```
 
-```{r fig-mfa-loadings, fig.width=11, fig.height=6}
+```{r fig-mfa-loadings, fig.width=10, fig.height=5}
 loadings_long <- loadings_df |>
     pivot_longer(c(Dim.1, Dim.2), names_to = "dim", values_to = "loading") |>
     mutate(
-        dataset = factor(dataset, levels = datasets_by_dim1),
+        dataset = factor(dataset, levels = rev(datasets_by_dim1)),
         dim = recode(dim, Dim.1 = "Dimension 1", Dim.2 = "Dimension 2"),
-        method_within = reorder_within(
-            method, abs(loading), interaction(dataset, dim)
-        )
+        sign = if_else(loading >= 0, "positive", "negative")
     )
 
-# loadings to interpret the MFA scores
-p_mfa_loadings <- ggplot(loadings_long, aes(loading, method_within)) +
-    geom_col(show.legend = FALSE, fill = axiom_palette$ink) +
-    geom_vline(xintercept = 0, color = axiom_palette$ink, linewidth = 0.5) +
-    scale_y_reordered() +
-    scale_x_continuous(expand = c(0, 0, 0, 0.1)) +
-    facet_wrap(~ dim + dataset, scales = "free", ncol = 4) +
-    scale_fill_shap(limits = c(-1, 1), name = "Loading") +
+# Hinton diagram: square area encodes |loading|, black/white encodes sign,
+# faceted by dimension
+p_mfa_loadings <- ggplot(loadings_long, aes(method, dataset)) +
+    geom_point(
+        aes(size = abs(loading), fill = sign),
+        shape = 22, color = axiom_palette$ink, stroke = 0.4
+    ) +
+    facet_wrap(~dim, nrow = 1) +
+    scale_size_area(max_size = 10, limits = c(0, 1), name = "|Loading|") +
+    scale_fill_manual(
+        values = c(positive = axiom_palette$ink, negative = "white"),
+        name = "Sign"
+    ) +
     labs(
         title = "Feature Importance MFA: loadings",
-        x = "Correlation with axis", y = NULL
+        x = "Method", y = NULL
+    ) +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.background = element_rect(fill = "#cecdcd", color = NA),
+        panel.grid.major = element_blank()
     )
 p_mfa_loadings
 ggsave(
     path(fig_dir, "fig_mfa_loadings.svg"), p_mfa_loadings,
-    width = 11, height = 6
+    width = 10, height = 5
 )
 ```
 
@@ -169,14 +177,13 @@ ggsave(
 These are rankings at $n = 500$ for the classification tasks, with panels
 ordered by variance in rankings. This parallels the MFA, with correlation and
 knockoffs struggling with nonlinear data and correlation is failing for
-dependent features. We also find minSHAP sometimes (correctly) recognizes that
-no variable is important in the confounding dataset. There are also some ties.
+dependent features. There are also some ties.
 In real data this would be unusual, but we are explaining the simulated function
 itself (not a fitted model), so the feature importances are actually equal —
 e.g., for linear additive, noise features aren't in the model, so predictions
 don't change when permuted.
 
-```{r fig-bump, fig.width=14, fig.height=7}
+```{r fig-bump, fig.width=15, fig.height=8}
 n_features <- length(FEATURE_ORDER)
 strip_y <- n_features + 0.9
 method_shapes <- setNames(
@@ -314,6 +321,65 @@ p_div <- ggplot(
 p_div
 ggsave(
     path(fig_dir, "fig_divergence_dependent_features.svg"), p_div,
+    width = 7.5, height = 3
+)
+```
+
+The `dependent_features` data uses the same anchor/proxy DGP, but with
+noise scaled down so the proxy is a near-perfect copy of the anchor. Marginal
+correlation can't distinguish the pair at all here; knockoffs still should.
+
+```{r divergence-compute-corr}
+divergence_df_corr <- pmap_dfr(divergence_configs, \(seed, n, response_type) {
+    corr <- load_method_importance(
+        "dependent_features", n, response_type, seed, "correlation",
+        results_dir
+    ) |>
+        rename(correlation = importance)
+    kn <- load_method_importance(
+        "dependent_features", n, response_type, seed, "knockoffs",
+        results_dir
+    ) |>
+        rename(knockoffs = importance)
+
+    corr |>
+        select(feature, correlation) |>
+        left_join(select(kn, feature, knockoffs), by = "feature") |>
+        filter(feature %in% c("x1", "x2")) |>
+        mutate(seed = seed, n = n, response_type = response_type)
+})
+```
+
+```{r fig-divergence-corr, fig.width=7.5, fig.height=3}
+divergence_means_corr <- divergence_df_corr |>
+    group_by(feature, response_type, n) |>
+    summarize(
+        correlation = mean(correlation), knockoffs = mean(knockoffs),
+        .groups = "drop"
+    )
+
+p_div_corr <- ggplot(
+    divergence_df_corr,
+    aes(correlation, knockoffs, color = feature, shape = response_type)
+) +
+    geom_hline(yintercept = 0, color = axiom_palette$grid, linewidth = 1.5) +
+    geom_vline(xintercept = 0, color = axiom_palette$grid, linewidth = 1.5) +
+    geom_point(size = 2, alpha = 0.4) +
+    geom_point(data = divergence_means_corr, size = 3, alpha = 0.8) +
+    facet_wrap(~n, labeller = labeller(n = ~ glue("n = {.x}"))) +
+    scale_color_manual(
+        values = feature_colors, labels = feature_labels, name = NULL
+    ) +
+    scale_shape_manual(values = c(classification = 16, regression = 17)) +
+    labs(
+        title = glue("Correlation vs. knockoffs on dependent_features"),
+        x = "Correlation importance", y = "Knockoffs importance",
+        shape = "Response type"
+    )
+
+p_div_corr
+ggsave(
+    path(fig_dir, "fig_divergence_correlated.svg"), p_div_corr,
     width = 7.5, height = 3
 )
 ```

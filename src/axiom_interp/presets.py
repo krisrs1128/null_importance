@@ -21,7 +21,7 @@ def shap(background, n_orderings=200, seed=0) -> Explainer:
     )
 
 
-def minshap(background, n_orderings=200, seed=0) -> Explainer:
+def marginalminshap(background, n_orderings=200, seed=0) -> Explainer:
     # Compared to shap, this replaces the aggregator ShapleyWeights -> Min
     return shap(background, n_orderings, seed).replace(aggregator=Min())
 

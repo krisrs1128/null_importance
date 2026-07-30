@@ -3,7 +3,7 @@
     E = A( { I_j(f, x, omega) }_omega )
 
 The atomic-statistics { I_j(.) } are computed once and saved. Swapping only the
-aggregator (SHAP -> minSHAP) reuses those summaries.
+aggregator (SHAP -> marginal minSHAP) reuses those summaries.
 """
 
 from dataclasses import dataclass, replace as _dc_replace
