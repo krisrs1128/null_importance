@@ -30,8 +30,25 @@ MEAN_FNS["dependent_features"] = partial(_scaled_sum, "gamma", 3.0)
 MEAN_FNS["confounding"] = partial(_scaled_sum, "gamma", 3.0)
 
 
-@register_mean("xor")
-def mean_xor(cols, cfg):
+def chain_terminal_indices(n_nonnull, chain_length):
+    """Zero-based terminal indices for contiguous chains of at most chain_length."""
+    if chain_length < 1:
+        raise ValueError(f"chain_length must be at least 1; got {chain_length}.")
+    return [
+        min(start + chain_length, n_nonnull) - 1
+        for start in range(0, n_nonnull, chain_length)
+    ]
+
+
+@register_mean("mediated_chains")
+def mean_mediated_chains(cols, cfg):
+    """mean = gamma / sqrt(n_chains) * sum(terminal node of each chain)."""
+    gamma = cfg.get("gamma", 3.0)
+    return gamma / np.sqrt(len(cols)) * sum(cols)
+
+
+@register_mean("parity")
+def mean_parity(cols, cfg):
     """mean = -gamma * prod(sign(c) for c in cols)."""
     gamma = cfg.get("gamma", 3.0)
     signs = [np.sign(c) for c in cols]
