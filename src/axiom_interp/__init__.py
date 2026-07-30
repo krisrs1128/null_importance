@@ -3,7 +3,7 @@
 Every method is determined by (index x intervention x atomic x aggregator).
 
     >>> e = presets.shap(background)
-    >>> e_min = e.replace(aggregator=aggregate.Min())   # minSHAP
+    >>> e_min = e.replace(aggregator=aggregate.Min())   # marginal minSHAP
 """
 
 from . import index, intervention, atomic, aggregate, presets, properties

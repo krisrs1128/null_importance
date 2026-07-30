@@ -7,14 +7,14 @@ hydra:
 
 # Global dimensionality definition
 dimensions:
-  n_features: 10
-  n_nonnull: 4
+  n_features: 12
+  n_nonnull: 6
 
 datasets:
   linear_additive:
     beta: 4.0   # same across all n_nonnull signal features
     sigma_y: 1.0
-  xor:
+  parity:
     gamma: 3.0
     sigma_y: 1.0
   product_interaction:
@@ -22,6 +22,11 @@ datasets:
     sigma_y: 1.0
   dependent_features:
     noise_scale: 0.3
+    gamma: 3.0
+    sigma_y: 1.0
+  mediated_chains:
+    chain_length: 3
+    transition_noise: 1.0
     gamma: 3.0
     sigma_y: 1.0
   confounding:
@@ -49,7 +54,7 @@ methods:
   correlation: true
   permutation: true
   minshap: true
-  kernelshap: true
+  sage: true
   knockoffs: true
   pdp_variance: true
   integrated_gradients: true
@@ -61,15 +66,11 @@ methods:
 permutation:
   n_repeats: 100
 
-minshap:
-  n_samples: 10
-  n_orderings: 100
-  n_background: 100
-
-kernelshap:
-  n_samples: 10
-  n_coalitions: 100
-  n_background: 100
+risk:
+  n_orderings: 30
+  model_params:
+    n_estimators: 50
+    max_depth: 3
 
 knockoffs:
   fdr: 0.1
@@ -88,9 +89,9 @@ gcm:
 
 categories:
   correlation: marginal
-  kernelshap: marginal
   permutation: risk
   minshap: conditional
+  sage: risk
   knockoffs: conditional
   pdp_variance: functional
   integrated_gradients: functional
