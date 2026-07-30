@@ -28,7 +28,7 @@ class Mean(Aggregator):
 
 
 class Min(Aggregator):
-    """minSHAP: a unit scores high only if it contributes across all contexts.
+    """marginal minSHAP: a unit scores high only if it contributes across all contexts.
     """
 
     def reduce(self, atomic: np.ndarray) -> float:
