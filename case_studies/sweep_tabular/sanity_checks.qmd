@@ -84,7 +84,7 @@ plot_facet_across_n("linear_additive", "regression", la_features,
 
 ---
 
-## XOR
+## Parity
 
 **DGP:** E[Y|x] = −γ·prod(sign(x₁), sign(x₂), ...), x_i ∈ U[−1,1]
 
@@ -92,35 +92,35 @@ I realize that the "signal" variables are uniform while the nulls are gaussian.
 I don't think it makes a difference conceptually, but we might want to revise to
 enforce consistency.
 
-```{r xor_setup, include=FALSE}
-xor_features <- c("x1", "x2", "x3", "x4", "noise_1")
-xor_classify <- ~ ifelse(.x == "noise_1", "Null", "Signal")
-xor_fill <- c(Signal = palette_overall["signal"], Null = palette_overall["null"])
+```{r parity_setup, include=FALSE}
+parity_features <- c("x1", "x2", "x3", "x4", "noise_1")
+parity_classify <- ~ ifelse(.x == "noise_1", "Null", "Signal")
+parity_fill <- c(Signal = palette_overall["signal"], Null = palette_overall["null"])
 ```
 
 ::: {.panel-tabset}
 
 ### Classification
 
-```{r xor_classification_scatter, fig.width=14, fig.height=4.5}
-render_correlation_and_scatter("xor", "classification", xor_features)
+```{r parity_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("parity", "classification", parity_features)
 ```
 
-```{r xor_classification_facet, fig.width=14, fig.height=5}
-plot_facet_across_n("xor", "classification", xor_features,
-    classify = xor_classify, fill_values = xor_fill, ns = sample_sizes
+```{r parity_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("parity", "classification", parity_features,
+    classify = parity_classify, fill_values = parity_fill, ns = sample_sizes
 )
 ```
 
 ### Regression
 
-```{r xor_regression_scatter, fig.width=14, fig.height=4.5}
-render_correlation_and_scatter("xor", "regression", xor_features)
+```{r parity_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("parity", "regression", parity_features)
 ```
 
-```{r xor_regression_facet, fig.width=14, fig.height=5}
-plot_facet_across_n("xor", "regression", xor_features,
-    classify = xor_classify, fill_values = xor_fill, ns = sample_sizes
+```{r parity_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("parity", "regression", parity_features,
+    classify = parity_classify, fill_values = parity_fill, ns = sample_sizes
 )
 ```
 
@@ -212,6 +212,59 @@ render_correlation_and_scatter("dependent_features", "regression", dependent_fea
 ```{r dependent_regression_facet, fig.width=14, fig.height=5}
 plot_facet_across_n("dependent_features", "regression", dependent_features_cols,
     classify = dependent_classify, fill_values = dependent_fill, ns = sample_sizes
+)
+```
+
+:::
+
+---
+
+## Mediated Chains
+
+**DGP:** independent chains of configurable maximum length $L$, with
+$x_{k,j}=x_{k,j-1}+\tau\epsilon_{k,j}$ and
+$E[Y\mid x]=\gamma q^{-1/2}\sum_{k=1}^q x_{k,\mathrm{terminal}}$.
+The final chain may be shorter. With the default $p_{signal}=4$ and $L=2$,
+the chains are $x_1\to x_2\to Y$ and $x_3\to x_4\to Y$. The upstream nodes
+are causally relevant but conditionally null given their successors.
+
+```{r mediated_chains_setup, include=FALSE}
+mediated_chains_cols <- c("x1", "x2", "x3", "x4", "noise_1")
+mediated_chains_classify <- ~ case_when(
+    .x %in% c("x1", "x3") ~ "Upstream (cond. null)",
+    .x %in% c("x2", "x4") ~ "Terminal",
+    TRUE ~ "Null"
+)
+mediated_chains_fill <- c(
+    `Upstream (cond. null)` = palette_overall["accent_orange"],
+    Terminal = palette_overall["signal"],
+    Null = palette_overall["null"]
+)
+```
+
+::: {.panel-tabset}
+
+### Classification
+
+```{r mediated_chains_classification_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("mediated_chains", "classification", mediated_chains_cols)
+```
+
+```{r mediated_chains_classification_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("mediated_chains", "classification", mediated_chains_cols,
+    classify = mediated_chains_classify, fill_values = mediated_chains_fill, ns = sample_sizes
+)
+```
+
+### Regression
+
+```{r mediated_chains_regression_scatter, fig.width=14, fig.height=4.5}
+render_correlation_and_scatter("mediated_chains", "regression", mediated_chains_cols)
+```
+
+```{r mediated_chains_regression_facet, fig.width=14, fig.height=5}
+plot_facet_across_n("mediated_chains", "regression", mediated_chains_cols,
+    classify = mediated_chains_classify, fill_values = mediated_chains_fill, ns = sample_sizes
 )
 ```
 
