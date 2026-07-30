@@ -12,6 +12,7 @@ from sklearn.metrics import matthews_corrcoef as mcc_score
 from sklearn.inspection import permutation_importance as pi
 from scipy.stats import pointbiserialr, pearsonr, norm as _norm
 from sklearn.inspection import partial_dependence as pd_func
+import xgboost as xgb
 
 log = logging.getLogger(__name__)
 
@@ -49,53 +50,6 @@ def treeshap(model, X, feature_names):
     shap_values = explainer.shap_values(X)
     vals = shap_values[:, :, 1]
     return pd.Series(np.mean(np.abs(vals), axis=0), index=feature_names, name="treeshap")
-
-
-@register("minshap")
-def minshap_importance(model, X, feature_names, mcfg, seed, rng, response_type):
-    n_samples = min(mcfg["n_samples"], X.shape[0])
-    sample_idx = rng.choice(X.shape[0], n_samples, replace=False)
-
-    n_bg = min(mcfg["n_background"], X.shape[0])
-    bg = X[rng.choice(X.shape[0], n_bg, replace=False)]
-
-    explainer = presets.minshap(bg, mcfg["n_orderings"], seed)
-    if response_type == "classification":
-        f = lambda batch: model.predict_proba(batch)[:, 1]
-    else:
-        f = lambda batch: model.predict(batch)
-
-    attr_matrix = np.zeros((n_samples, X.shape[1]))
-    for i, idx in enumerate(sample_idx):
-        res = explainer.explain(f, X[idx])
-        attr_matrix[i] = res.as_array()
-        if (i + 1) % 10 == 0 or i == 0:
-            log.info(f"  minshap [{i + 1}/{n_samples}]")
-
-    return pd.Series(
-        np.mean(np.abs(attr_matrix), axis=0), index=feature_names, name="minshap"
-    )
-
-
-@register("kernelshap")
-def kernelshap(model, X, feature_names, kshap_cfg, rng, response_type):
-    n_samples = min(kshap_cfg["n_samples"], X.shape[0])
-    sample_idx = rng.choice(X.shape[0], n_samples, replace=False)
-    X_sample = X[sample_idx]
-
-    n_bg = min(kshap_cfg["n_background"], X.shape[0])
-    bg = X[rng.choice(X.shape[0], n_bg, replace=False)]
-
-    if response_type == "classification":
-        f = lambda batch: model.predict_proba(batch)[:, 1]
-    else:
-        f = lambda batch: model.predict(batch)
-    explainer = shap.KernelExplainer(f, bg)
-    sv = explainer.shap_values(X_sample, nsamples=kshap_cfg["n_coalitions"])
-
-    return pd.Series(
-        np.mean(np.abs(sv), axis=0), index=feature_names, name="kernelshap"
-    )
 
 
 @register("loco")
@@ -154,6 +108,81 @@ def knockoff_scores(X_df, y, feature_names, kcfg, rng):
     for j, feat in enumerate(kept_features):
         result[feat] = w_stats[j]
     return result
+
+
+def _subset_risk(subset, X, y, model_params, random_state):
+    """In-sample MSE of an XGBoost regressor fit on X[:, subset].
+    """
+    if len(subset) == 0:
+        return float(np.mean((y - y.mean()) ** 2))
+
+    model = xgb.XGBRegressor(
+        objective="reg:squarederror",
+        random_state=random_state,
+        **model_params,
+    )
+    X_subset = X[:, subset]
+    model.fit(X_subset, y)
+    y_pred = model.predict(X_subset)
+    return float(np.mean((y - y_pred) ** 2))
+
+
+@register("minshap")
+def minshap_importance(X, y, feature_names, risk_cfg, rng):
+    """Risk-based minSHAP: subset-refit value functions (2604.15107, Thm 2)."""
+    contributions = _risk_contributions(X, y, risk_cfg["n_orderings"],
+                                         risk_cfg["model_params"], rng)
+    return pd.Series(contributions.min(axis=0), index=feature_names, name="minshap")
+
+
+@register("sage")
+def sage_importance(X, y, feature_names, risk_cfg, rng):
+    """Ordinary risk-Shapley value: mean over sampled orderings of the same
+    subset-risk contributions minSHAP takes the min over (2604.15107 §2 — the
+    un-minned Shapley value of the risk game V(S) = -inf_f E[l(Y,f_S(X_S))],
+    matching Covert/Lundberg/Lee 2020 "SAGE")."""
+    contributions = _risk_contributions(X, y, risk_cfg["n_orderings"],
+                                         risk_cfg["model_params"], rng)
+    return pd.Series(contributions.mean(axis=0), index=feature_names, name="sage")
+
+
+def _risk_contributions(X, y, n_orderings, model_params, rng):
+    """Permutation-sampled subset-risk contributions (arxiv 2604.15107, Thm 2 setup).
+
+    Parameters
+    ----------
+    X : ndarray of shape (n, d)
+    y : ndarray of shape (n,)
+    n_orderings : int
+        Number of sampled permutations.
+    model_params : dict
+        Forwarded to _subset_risk / xgb.XGBRegressor.
+    rng : np.random.Generator
+        Sole source of randomness.
+
+    Returns
+    -------
+    ndarray of shape (n_orderings, d)
+        contributions[k, j] = VI_j^{pi_k}: risk drop from adding feature j to
+        its prefix under the k-th sampled ordering. minSHAP = min over k; the
+        mean over k is the ordinary (SAGE-style) risk-Shapley value.
+    """
+    _, d = X.shape
+    risk_empty = _subset_risk([], X, y, model_params, random_state=None)
+    contributions = np.empty((n_orderings, d))
+
+    for ordering in range(n_orderings):
+        perm = rng.permutation(d)
+        prev = risk_empty
+        for i in range(d):
+            cur = _subset_risk(
+                perm[: i + 1], X, y, model_params,
+                random_state=int(rng.integers(1, 2**31)),
+            )
+            contributions[ordering, perm[i]] = prev - cur
+            prev = cur
+
+    return contributions
 
 
 def _gcm_pvalue(x, y, z, seed_x, seed_y, n_estimators):

@@ -1,4 +1,4 @@
-"""Compute SHAP and minSHAP attributions for a fitted classifier."""
+"""Compute SHAP and marginal minSHAP attributions for a fitted classifier."""
 
 import sys
 from pathlib import Path

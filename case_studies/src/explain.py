@@ -1,4 +1,4 @@
-"""Wrap SHAP and minSHAP across samples."""
+"""Wrap SHAP and marginal minSHAP across samples."""
 
 import numpy as np
 import pandas as pd
@@ -33,7 +33,7 @@ def select_samples(y, y_pred_prob):
 
 
 def attribute(X, model, feat_names, sample_idx, ecfg, seed, rng):
-    """Compute SHAP and minSHAP attributions for selected samples.
+    """Compute SHAP and marginal minSHAP attributions for selected samples.
 
     Parameters
     ----------
@@ -63,7 +63,7 @@ def attribute(X, model, feat_names, sample_idx, ecfg, seed, rng):
     bg = X[bg_idx]
 
     explainer_shap = presets.shap(bg, ecfg["n_orderings"], seed)
-    explainer_min = presets.minshap(bg, ecfg["n_orderings"], seed)
+    explainer_min = presets.marginalminshap(bg, ecfg["n_orderings"], seed)
 
     shap_arr = np.zeros((len(sample_idx), d))
     min_arr = np.zeros((len(sample_idx), d))
@@ -74,7 +74,7 @@ def attribute(X, model, feat_names, sample_idx, ecfg, seed, rng):
 
         res_shap = explainer_shap.explain(f, xi)
         res_min = explainer_min.explain(f, xi)
-        assert compute_count() == 1, "minSHAP should reuse cached tensor"
+        assert compute_count() == 1, "marginal minSHAP should reuse cached tensor"
 
         shap_arr[i] = res_shap.as_array()
         min_arr[i] = res_min.as_array()
