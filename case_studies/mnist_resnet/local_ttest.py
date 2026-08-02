@@ -14,21 +14,38 @@ def local_ttest_scores(
     background: np.ndarray,
     background_predicted_label: np.ndarray,
     sample_predicted_label: np.ndarray,
+    X_neighbor_features: np.ndarray | None = None,
+    background_neighbor_features: np.ndarray | None = None,
     n_neighbors: int = 20,
     min_group_size: int = 2,
     eps: float = 1e-8,
 ) -> np.ndarray:
-    """Compare same-predicted-class vs other-class neighbors near each sample."""
+    """This is a marginal null-importance test using t-tests within neighborhoods
+
+    Neighborhoods can be computed either in the raw or the embedding pixel
+    space. The test is done in pixel space after sample selection is done.
+    """
     X = np.asarray(X, dtype=float)
     background = np.asarray(background, dtype=float)
+    X_neighbor_features = np.asarray(
+        X if X_neighbor_features is None else X_neighbor_features, dtype=float
+    )
+    background_neighbor_features = np.asarray(
+        background
+        if background_neighbor_features is None
+        else background_neighbor_features,
+        dtype=float,
+    )
     background_predicted_label = np.asarray(background_predicted_label, dtype=int)
-    k = min(int(n_neighbors), len(background))
 
+    k = min(int(n_neighbors), len(background))
     scores = np.zeros_like(X, dtype=float)
-    for i, x in enumerate(X):
-        distances = np.linalg.norm(background - x, axis=1)
+    for i, neighbor_x in enumerate(X_neighbor_features):
+        distances = np.linalg.norm(background_neighbor_features - neighbor_x, axis=1)
         nearest = np.argsort(distances)[:k]
-        same_class = background_predicted_label[nearest] == int(sample_predicted_label[i])
+        same_class = background_predicted_label[nearest] == int(
+            sample_predicted_label[i]
+        )
 
         if same_class.sum() >= min_group_size and (~same_class).sum() >= min_group_size:
             scores[i] = _welch_tstat(
