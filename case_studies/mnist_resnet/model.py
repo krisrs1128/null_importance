@@ -85,10 +85,13 @@ class MNISTResNetFlat:
             batch_size=batch_size,
         )
 
+    def _preprocess(self, flat_batch) -> torch.Tensor:
+        images = torch.tensor(unflatten_pixels(flat_batch), dtype=torch.float32)
+        return (images - self.image_mean) / self.image_std
+
     def predict_proba(self, flat_batch) -> np.ndarray:
         """Return class probabilities for raw flat pixel vectors."""
-        images = torch.tensor(unflatten_pixels(flat_batch), dtype=torch.float32)
-        images = (images - self.image_mean) / self.image_std
+        images = self._preprocess(flat_batch)
 
         probs = []
         with torch.no_grad():
@@ -97,6 +100,18 @@ class MNISTResNetFlat:
                 logits = self.model(pixel_values=batch).logits
                 probs.append(torch.softmax(logits, dim=1).cpu().numpy())
         return np.vstack(probs)
+
+    def final_embeddings(self, flat_batch) -> np.ndarray:
+        """Get resnet pre-classification embeddings"""
+        images = self._preprocess(flat_batch)
+
+        embeddings = []
+        with torch.no_grad():
+            for start in range(0, len(images), self.batch_size):
+                batch = images[start : start + self.batch_size]
+                pooled = self.model.resnet(pixel_values=batch).pooler_output
+                embeddings.append(pooled.flatten(start_dim=1).cpu().numpy())
+        return np.vstack(embeddings)
 
     def class_probability(self, label: int):
         """Scalar f(batch) -> P(label) for axiom_interp explainers."""
