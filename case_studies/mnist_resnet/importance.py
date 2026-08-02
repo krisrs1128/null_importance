@@ -6,12 +6,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import shap
 from omegaconf import DictConfig
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "src"))
 
-from axiom_interp import compute_count, presets, reset_compute_count
+from axiom_interp import presets
 from model import (
     MNISTResNetFlat,
     N_PIXELS,
@@ -21,6 +22,7 @@ from model import (
 )
 
 log = logging.getLogger(__name__)
+logging.getLogger("shap").setLevel(logging.WARNING)
 META_COLS = [
     "sample_index",
     "true_label",
@@ -74,29 +76,32 @@ def attribute(
     sample_meta: pd.DataFrame,
     background: np.ndarray,
     model: MNISTResNetFlat,
-    n_orderings: int,
+    n_shap_samples: int | str,
     ig_steps: int,
     ig_eps: float,
     seed: int,
 ) -> dict[str, pd.DataFrame]:
     """Adapt case_studies/src/explain.py::attribute to flat MNIST pixels."""
-    shap_explainer = presets.shap(background, n_orderings, seed)
-    minshap_explainer = presets.minshap(background, n_orderings, seed)
+    np.random.seed(seed)
+
     ig_explainer = presets.integrated_gradients(np.zeros(N_PIXELS), ig_steps, ig_eps)
     functions_by_label = {}
-    scores = {"shap": [], "minshap": [], "integrated_gradients": []}
+    shap_explainers_by_label = {}
+    scores = {"shap": [], "integrated_gradients": []}
 
     for i, row in sample_meta.iterrows():
         target = int(row["target_label"])
         if target not in functions_by_label:
             functions_by_label[target] = model.class_probability(target)
+            shap_explainers_by_label[target] = shap.KernelExplainer(
+                functions_by_label[target], background
+            )
 
-        # minSHAP changes only the aggregator, so it should reuse SHAP's tensor.
-        reset_compute_count()
         f = functions_by_label[target]
-        scores["shap"].append(shap_explainer.explain(f, X[i]).as_array())
-        scores["minshap"].append(minshap_explainer.explain(f, X[i]).as_array())
-        assert compute_count() == 1, "minSHAP should reuse the cached SHAP tensor"
+        shap_values = shap_explainers_by_label[target].shap_values(
+            X[i : i + 1], nsamples=n_shap_samples, silent=True
+        )
+        scores["shap"].append(np.asarray(shap_values).reshape(-1))
         scores["integrated_gradients"].append(ig_explainer.explain(f, X[i]).as_array())
         log.info("[%s/%s] sample_index=%s target=%s", i + 1, len(X), row["sample_index"], target)
 
