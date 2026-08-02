@@ -1,8 +1,14 @@
-"""Select MNIST predictions for local null-importance analysis."""
+"""Select MNIST samples for local null-importance analysis.
+
+Run from this case-study directory, after download.py:
+    python select_samples.py
+"""
 
 import json
+import logging
 from pathlib import Path
 
+import hydra
 import numpy as np
 import pandas as pd
 import torch
@@ -12,6 +18,7 @@ from torchvision import transforms
 from torchvision.datasets import MNIST
 from transformers import AutoConfig, AutoModelForImageClassification
 
+log = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 N_CLASSES = 10
@@ -127,3 +134,19 @@ def select_samples(predictions: pd.DataFrame) -> pd.DataFrame:
             )
 
     return pd.concat(selected, ignore_index=True)[SAMPLE_COLUMNS]
+
+
+@hydra.main(version_base=None, config_path=".", config_name="config")
+def main(cfg: DictConfig) -> None:
+    sample_meta = select_samples(predict_test_set(cfg))
+    output_path = case_path(cfg.paths.results_dir) / "sample_meta.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sample_meta.to_csv(output_path, index=False)
+
+    counts = sample_meta.groupby(["true_label", "correct"]).size().unstack(fill_value=0)
+    log.info("Saved %s selected samples to %s", len(sample_meta), output_path)
+    log.info("Selection counts by true label and correct flag:\n%s", counts)
+
+
+if __name__ == "__main__":
+    main()
