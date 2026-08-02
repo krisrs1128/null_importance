@@ -1,0 +1,174 @@
+---
+title: "Local Attributions on MNIST"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+fig-width: 12
+fig-height: 10
+---
+
+```{r setup, include=FALSE}
+library(fs)
+library(glue)
+library(here)
+library(patchwork)
+library(scico)
+library(tidytext)
+library(tidyverse)
+
+source(here("case_studies", "src", "R", "visualize.R"))
+
+base <- path(here("case_studies", "mnist_resnet"))
+results_dir <- base / "results"
+importance_dir <- results_dir / "importance"
+fig_dir <- results_dir / "figures"
+dir_create(fig_dir)
+
+theme_set(theme_axiomatic(base_size = 11))
+
+method_labels <- c(
+    shap = "SHAP",
+    integrated_gradients = "Int. Gradients",
+    local_ttest = "Local t-test"
+)
+```
+
+```{r load-data}
+# Read sample metadata
+sample_meta <- read_csv(results_dir / "sample_meta.csv", show_col_types = FALSE)
+
+# Pixel → (row, col) map
+pixel_map <- read_csv(
+    importance_dir / "pixel_feature_map.csv",
+    show_col_types = FALSE
+)
+
+# Read attribution files for all methods
+methods_local <- c("shap", "integrated_gradients", "local_ttest")
+read_attributions <- function(method) {
+    read_csv(
+        importance_dir / glue("{method}_attributions.csv"),
+        show_col_types = FALSE
+    ) |>
+        mutate(method = method)
+}
+
+all_attr <- map_dfr(methods_local, read_attributions)
+
+# Pivot to long: one row per (instance, pixel, method)
+pixel_cols <- paste0("pixel_", 0:783)
+
+all_long <- all_attr |>
+    select(sample_index, true_label, predicted_label, correct, method, all_of(pixel_cols)) |>
+    pivot_longer(
+        all_of(pixel_cols),
+        names_to = "pixel_col",
+        values_to = "attribution"
+    ) |>
+    mutate(pixel_index = as.numeric(str_replace(pixel_col, "pixel_", "")))
+
+# Map pixel index to (row, col)
+all_long <- all_long |>
+    left_join(pixel_map, by = "pixel_index")
+
+# normalize the attributions
+all_long <- all_long |>
+    group_by(method) |>
+    mutate(attribution_z = as.numeric(scale(attribution))) |>
+    ungroup()
+
+# original images to place near attributions
+raw_pixels <- read_csv(
+    importance_dir / "raw_pixels.csv",
+    show_col_types = FALSE
+) |>
+    select(sample_index, true_label, predicted_label, correct, all_of(pixel_cols)) |>
+    pivot_longer(
+        all_of(pixel_cols),
+        names_to = "pixel_col",
+        values_to = "intensity"
+    ) |>
+    mutate(pixel_index = as.numeric(str_replace(pixel_col, "pixel_", ""))) |>
+    left_join(pixel_map, by = "pixel_index")
+```
+
+```{r digit-heatmap-fn}
+#' Pixel-level attribution heatmap for one digit class.
+#' @param digit true label to show (0-9)
+plot_digit_heatmap <- function(digit) {
+    show_instances <- sample_meta |>
+        filter(true_label == digit) |>
+        slice(1, 6, 7) |> # one correct, two different misclassifications
+        pull(sample_index)
+
+    instance_labels <- sample_meta |>
+        filter(sample_index %in% show_instances) |>
+        mutate(label = ifelse(correct,
+            glue("sample {sample_index}: correct"),
+            glue("sample {sample_index}: misclass → {predicted_label}")
+        )) |>
+        select(sample_index, label)
+
+    attr_methods <- all_long |>
+        filter(sample_index %in% show_instances, true_label == digit) |>
+        left_join(instance_labels, by = "sample_index") |>
+        mutate(method = recode(method, !!!method_labels))
+
+    digit_images <- raw_pixels |>
+        filter(sample_index %in% show_instances, true_label == digit) |>
+        left_join(instance_labels, by = "sample_index") |>
+        mutate(panel = "Original digit")
+
+    p_image <- ggplot(digit_images, aes(x = col, y = row, fill = intensity)) +
+        geom_tile() +
+        scale_y_reverse() +
+        scale_fill_gradient(low = "white", high = "black", guide = "none") +
+        coord_fixed() +
+        facet_grid(panel ~ label) +
+        theme_void() +
+        theme(strip.text = element_text(size = 7))
+
+    p_attr <- ggplot(attr_methods, aes(x = col, y = row, fill = attribution_z)) +
+        geom_tile() +
+        scale_y_reverse() +
+        scale_fill_gradientn(
+            colours = axiom_palette$diverging,
+            name = "Attribution (z-score, clipped to ±4)",
+            limits = c(-4, 4), oob = scales::squish # clip extreme values
+        ) +
+        coord_fixed() +
+        facet_grid(method ~ label) +
+        theme_void() +
+        theme(
+            strip.text.x = element_blank(),
+            strip.text.y = element_text(size = 7),
+            legend.position = "bottom",
+            legend.key.width = unit(1.5, "cm")
+        )
+
+    n_methods <- length(unique(attr_methods$method))
+    (p_image / p_attr) +
+        plot_layout(heights = c(1, n_methods)) +
+        plot_annotation(
+            title = glue("Pixel-Level Attributions for Selected Digit {digit} Instances")
+        )
+}
+```
+
+```{r attribution-heatmaps-all-digits, results='asis', fig.width=12, fig.height=6}
+for (digit in 0:9) {
+    cat(glue("\n\n## Digit {digit}\n\n"))
+    p_heatmap <- plot_digit_heatmap(digit)
+    print(p_heatmap)
+    ggsave(
+        path(fig_dir, glue("fig_attribution_heatmap_digit{digit}.svg")),
+        p_heatmap,
+        width = 12, height = 6
+    )
+}
+```

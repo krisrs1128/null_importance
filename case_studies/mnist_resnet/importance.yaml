@@ -9,7 +9,7 @@ seed: 2026
 
 paths:
   data_dir: data
-  results_dir: results
+  results_dir: results/importance
   model_path: results/model.pt
   model_source_dir: results/model_source
   sample_meta: results/sample_meta.csv
@@ -18,22 +18,20 @@ model:
   batch_size: 256
 
 explain:
-  # MNIST has 784 pixel features. One SHAP ordering requires about 785 model-value
-  # calls per sample, each averaged over these SHAP/minSHAP background rows.
-  n_orderings: 5
+# n_samples is the the number of coalitions per selected image and n_background
+# rows are used for imputation for each coalition
+  n_samples: 2000
   n_background: 10
   target: predicted_label
 
 integrated_gradients:
-  # The preset uses finite-difference gradients over 784 pixels, so keep this
-  # small unless running on faster hardware.
-  n_steps: 2
+  n_steps: 4
   eps: 0.0001
 
 local_ttest:
-  distance: pixel_l2
-  # Candidate pool for nearest-neighbor search; separate from SHAP/minSHAP background.
-  n_pool: 200
+  # we consider only a subsample ("pool") for neighborhood selection
+  distance: resnet_final_embedding_l2
+  n_pool: 1000
   n_neighbors: 20
   min_group_size: 2
 
