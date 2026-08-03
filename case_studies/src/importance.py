@@ -1,6 +1,7 @@
 """Consistent interface to feature importance methods."""
 
 import logging
+
 import numpy as np
 import pandas as pd
 import shap
@@ -111,8 +112,7 @@ def knockoff_scores(X_df, y, feature_names, kcfg, rng):
 
 
 def _subset_risk(subset, X, y, model_params, random_state):
-    """In-sample MSE of an XGBoost regressor fit on X[:, subset].
-    """
+    """In-sample MSE of an XGBoost regressor fit on ``X[:, subset]``."""
     if len(subset) == 0:
         return float(np.mean((y - y.mean()) ** 2))
 
@@ -127,62 +127,95 @@ def _subset_risk(subset, X, y, model_params, random_state):
     return float(np.mean((y - y_pred) ** 2))
 
 
+def risk_importance_details(X, y, feature_names, cfg, rng):
+    """Compute one shared set of sampled orderings for SAGE and minSHAP.
+
+    This is used to understand minSHAP vs. SHAP contributions for a single
+    sample.
+    """
+    details = _risk_contribution_details(
+        X, y, cfg["n_orderings"], cfg["model_params"], rng
+    )
+    contributions = details[0]
+    minshap = pd.Series(
+        contributions.min(axis=0), index=feature_names, name="minshap"
+    )
+    sage = pd.Series(contributions.mean(axis=0), index=feature_names, name="sage")
+    return minshap, sage, risk_contribution_frame(details, feature_names)
+
+
 @register("minshap")
-def minshap_importance(X, y, feature_names, risk_cfg, rng):
-    """Risk-based minSHAP: subset-refit value functions (2604.15107, Thm 2)."""
-    contributions = _risk_contributions(X, y, risk_cfg["n_orderings"],
-                                         risk_cfg["model_params"], rng)
-    return pd.Series(contributions.min(axis=0), index=feature_names, name="minshap")
+def minshap_importance(X, y, feature_names, cfg, rng):
+    """Risk-based minSHAP (2604.15107, Thm 2)."""
+    minshap, _, _ = risk_importance_details(X, y, feature_names, cfg, rng)
+    return minshap
 
 
 @register("sage")
-def sage_importance(X, y, feature_names, risk_cfg, rng):
-    """Ordinary risk-Shapley value: mean over sampled orderings of the same
-    subset-risk contributions minSHAP takes the min over (2604.15107 §2 — the
-    un-minned Shapley value of the risk game V(S) = -inf_f E[l(Y,f_S(X_S))],
-    matching Covert/Lundberg/Lee 2020 "SAGE")."""
-    contributions = _risk_contributions(X, y, risk_cfg["n_orderings"],
-                                         risk_cfg["model_params"], rng)
-    return pd.Series(contributions.mean(axis=0), index=feature_names, name="sage")
+def sage_importance(X, y, feature_names, cfg, rng):
+    """Ordinary risk-based Shapley value ("SAGE")."""
+    _, sage, _ = risk_importance_details(X, y, feature_names, cfg, rng)
+    return sage
 
 
-def _risk_contributions(X, y, n_orderings, model_params, rng):
-    """Permutation-sampled subset-risk contributions (arxiv 2604.15107, Thm 2 setup).
-
-    Parameters
-    ----------
-    X : ndarray of shape (n, d)
-    y : ndarray of shape (n,)
-    n_orderings : int
-        Number of sampled permutations.
-    model_params : dict
-        Forwarded to _subset_risk / xgb.XGBRegressor.
-    rng : np.random.Generator
-        Sole source of randomness.
-
-    Returns
-    -------
-    ndarray of shape (n_orderings, d)
-        contributions[k, j] = VI_j^{pi_k}: risk drop from adding feature j to
-        its prefix under the k-th sampled ordering. minSHAP = min over k; the
-        mean over k is the ordinary (SAGE-style) risk-Shapley value.
-    """
+def _risk_contribution_details(X, y, n_orderings, model_params, rng):
+    """Return sampled contributions and predecessor coalitions."""
     _, d = X.shape
-    risk_empty = _subset_risk([], X, y, model_params, random_state=None)
+    base_seed = int(rng.integers(1, 2**31))
+    risk_cache = {}
+
+    def risk(subset):
+        key = tuple(sorted(int(j) for j in subset))
+        if key not in risk_cache:
+            mask = sum(1 << j for j in key)
+            random_state = (base_seed + mask) % (2**31 - 1) or 1
+            risk_cache[key] = _subset_risk(
+                key, X, y, model_params, random_state=random_state
+            )
+        return risk_cache[key]
+
     contributions = np.empty((n_orderings, d))
+    predecessors = [[None] * d for _ in range(n_orderings)]
 
     for ordering in range(n_orderings):
         perm = rng.permutation(d)
-        prev = risk_empty
-        for i in range(d):
-            cur = _subset_risk(
-                perm[: i + 1], X, y, model_params,
-                random_state=int(rng.integers(1, 2**31)),
-            )
-            contributions[ordering, perm[i]] = prev - cur
+        prev = risk(())
+        for position, target in enumerate(perm):
+            prefix = tuple(int(j) for j in perm[:position])
+            cur = risk(prefix + (int(target),))
+            contributions[ordering, target] = prev - cur
+            predecessors[ordering][target] = tuple(sorted(prefix))
             prev = cur
 
-    return contributions
+    return contributions, predecessors
+
+
+def risk_contribution_frame(details, feature_names):
+    """Convert sampled contributions to a tidy table for visualization.
+
+    ``details`` must be the tuple returned by
+    :func:`_risk_contribution_details`. Each row records the exact predecessor
+    coalition used for one feature in one sampled ordering.
+    """
+    contributions, predecessors = details
+    feature_names = tuple(feature_names)
+    rows = []
+    for ordering in range(contributions.shape[0]):
+        for target, name in enumerate(feature_names):
+            coalition_indices = predecessors[ordering][target]
+            membership = np.zeros(len(feature_names), dtype=int)
+            membership[list(coalition_indices)] = 1
+            row = {
+                "ordering": ordering + 1,
+                "target": name,
+                "contribution": contributions[ordering, target],
+            }
+            row.update({
+                f"in_{feature}": int(membership[j])
+                for j, feature in enumerate(feature_names)
+            })
+            rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def _gcm_pvalue(x, y, z, seed_x, seed_y, n_estimators):
