@@ -6,6 +6,8 @@ use in the explanation.
 
 Run from the repo root, after generate.py creates data/{dataset}_{n}_{response_type}_{seed}.csv:
     python case_studies/sweep_tabular/sweep.py
+
+To save additional summaries about the risk-based methods, see risk_summaries.py.
 """
 
 import inspect
@@ -82,12 +84,9 @@ def main(cfg: DictConfig):
                         "gcm_cfg": cfg_dict["gcm"],
                     }
 
-                    # run and save the explanations
                     for method, fn in METHODS.items():
-                        if not cfg.methods[method]:
+                        if not cfg_dict["methods"].get(method, False):
                             continue
-
-                        # skip if previously run
                         result_path = results_dir / f"{name}_{n}_{rt}_{seed}_{method}.csv"
                         if result_path.exists():
                             log.info(f"Skipping {name}_{n}_{rt}_{seed}_{method} — result already exists")
