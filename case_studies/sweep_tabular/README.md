@@ -71,7 +71,11 @@ example data and the associated model explanations, run,
 ```
 python generate.py
 python sweep.py
+python risk_summaries.py
 ```
+
+`risk_summaries.py` gathers useful data comparing minSHAP with ordinary Shapley.
+See `risk_summaries` in `config.yaml`.
 
 The synthetic data are saved into separate CSVs in a `data` subdirectory of this
 case study directory, with names like `data/{dataset}_{n}.csv`.  For example,
