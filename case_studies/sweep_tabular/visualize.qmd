@@ -41,6 +41,8 @@ dir_create(fig_dir)
 
 theme_set(theme_axiomatic(base_size = 12))
 null_colors <- null_type_colors()
+
+mediated_focus <- list(n = 5000, response_type = "regression", seed = 2026)
 ```
 
 This notebook visualizes the output of
@@ -143,8 +145,6 @@ loadings_long <- loadings_df |>
         sign = if_else(loading >= 0, "positive", "negative")
     )
 
-# Hinton diagram: square area encodes |loading|, black/white encodes sign,
-# faceted by dimension
 p_mfa_loadings <- ggplot(loadings_long, aes(method, dataset)) +
     geom_point(
         aes(size = abs(loading), fill = sign),
@@ -161,7 +161,7 @@ p_mfa_loadings <- ggplot(loadings_long, aes(method, dataset)) +
         x = "Method", y = NULL
     ) +
     theme(
-        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.x = element_text(angle = 90, hjust = 1),
         panel.background = element_rect(fill = "#cecdcd", color = NA),
         panel.grid.major = element_blank()
     )
@@ -201,8 +201,7 @@ ranks_by_dataset <- map(datasets, \(ds) {
 })
 names(ranks_by_dataset) <- datasets
 
-# Order datasets by variance in their feature rankings (higher method
-# disagreement panels first)
+# Order datasets by variance in their feature rankings
 datasets_by_disagreement <- names(sort(map_dbl(ranks_by_dataset, \(df) {
     df |>
         group_by(feature) |>
@@ -325,10 +324,6 @@ ggsave(
 )
 ```
 
-The `dependent_features` data uses the same anchor/proxy DGP, but with
-noise scaled down so the proxy is a near-perfect copy of the anchor. Marginal
-correlation can't distinguish the pair at all here; knockoffs still should.
-
 ```{r divergence-compute-corr}
 divergence_df_corr <- pmap_dfr(divergence_configs, \(seed, n, response_type) {
     corr <- load_method_importance(
@@ -381,5 +376,72 @@ p_div_corr
 ggsave(
     path(fig_dir, "fig_divergence_correlated.svg"), p_div_corr,
     width = 7.5, height = 3
+)
+```
+
+# minSHAP mediated-chain diagnostic
+
+The synthetic mediated-chain case study has two chains,
+$x_1 \to x_2 \to x_3 \to Y$ and
+$x_4 \to x_5 \to x_6 \to Y$. Only $x_3$ and $x_6$ are conditionally related
+to the response after all features are observed. The plots below use the exact
+sampled orderings and predecessor coalitions that produced the reported
+minSHAP and SAGE results. They do not enumerate a separate coalition game.
+
+```{r load-mediated-chain-contributions}
+mediated_stem <- with(
+    mediated_focus,
+    glue("mediated_chains_{n}_{response_type}_{seed}")
+)
+mediated <- load_mediated_contributions(mediated_stem, results_dir)
+mediated_contributions <- mediated$contributions
+mediated_membership <- mediated$membership
+mediated_aggregates <- mediated$aggregates
+```
+
+## Exact sampled conditional contributions
+
+```{r fig-mediated-contribution-focus, fig.width=15, fig.height=18}
+focus <- mediated_focus_data(mediated_membership, mediated_contributions, FEATURE_ORDER)
+p_mediated_focus <- mediated_membership_plot(
+    focus$membership, focus$outline,
+    subtitle = "Outline: added feature j"
+) | mediated_bars_plot(focus$bars)
+p_mediated_focus
+
+ggsave(
+    path(fig_dir, "fig_mediated_chain_contribution_focus.svg"),
+    p_mediated_focus, width = 15, height = 18
+)
+```
+
+```{r fig-mediated-contribution-highlight, fig.width=10, fig.height=5}
+mediation_highlight <- c("noise_1", "x1", "x3")
+highlight <- mediated_focus_data(
+    mediated_membership, mediated_contributions, mediation_highlight
+)
+p_mediated_highlight <- mediated_membership_plot(
+    highlight$membership, highlight$outline,
+    title = "Coalitions",
+) | mediated_bars_plot(highlight$bars)
+p_mediated_highlight
+
+ggsave(
+    path(fig_dir, "fig_mediated_chain_contribution_highlight.svg"),
+    p_mediated_highlight, width = 10, height = 5
+)
+```
+
+## Aggregated contributions
+
+```{r fig-mediated-aggregate-hinton}
+#| fig-width: 10
+#| fig-height: 8
+p_mediated_hinton <- mediated_hinton_plot(mediated_aggregates)
+p_mediated_hinton
+
+ggsave(
+    path(fig_dir, "fig_mediated_chain_aggregate_hinton.svg"),
+    p_mediated_hinton, width = 12, height = 4.5
 )
 ```
