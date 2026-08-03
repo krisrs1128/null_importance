@@ -9,7 +9,7 @@ library(FactoMineR)
 library(fs)
 
 #' Fixed feature order to use across synthetic datasets
-FEATURE_ORDER <- c(paste0("x", 1:4), paste0("noise_", 1:6))
+FEATURE_ORDER <- c(paste0("x", 1:6), paste0("noise_", 1:6))
 
 #' Labels to describe what type of null each variable encodes
 #'
@@ -25,55 +25,55 @@ null_type_table <- function() {
     bind_rows(
         tibble(
             dataset = "linear_additive",
-            feature = paste0("x", 1:4),
+            feature = paste0("x", 1:6),
             null_type = "Signal"
         ),
         noise_rows("linear_additive"),
         tibble(
             dataset = "parity",
-            feature = paste0("x", 1:4),
+            feature = paste0("x", 1:6),
             null_type = "Marginal null"
         ),
         noise_rows("parity"),
         tibble(
             dataset = "product_interaction",
-            feature = paste0("x", 1:4),
+            feature = paste0("x", 1:6),
             null_type = "Marginal null"
         ),
         noise_rows("product_interaction"),
         tibble(
             dataset = "dependent_features",
-            feature = c("x1", "x2", "x3", "x4"),
+            feature = c("x1", "x2", "x3", "x4", "x5", "x6"),
             null_type = c(
-                "Signal", "Conditional null", "Signal", "Conditional null"
+                "Signal", "Conditional null", "Signal", "Conditional null", "Signal", "Conditional null"
             )
         ),
         noise_rows("dependent_features"),
         tibble(
             dataset = "highly_correlated_dependent",
-            feature = c("x1", "x2", "x3", "x4"),
+            feature = c("x1", "x2", "x3", "x4", "x5", "x6"),
             null_type = c(
-                "Signal", "Conditional null", "Signal", "Conditional null"
+                "Signal", "Conditional null", "Signal", "Conditional null", "Signal", "Conditional null"
             )
         ),
         noise_rows("highly_correlated_dependent"),
         tibble(
             dataset = "mediated_chains",
-            feature = c("x1", "x2", "x3", "x4"),
+            feature = c("x1", "x2", "x3", "x4", "x5", "x6"),
             null_type = c(
-                "Conditional null", "Signal", "Conditional null", "Signal"
+                "Conditional null", "Conditional null", "Signal","Conditional null", "Conditional null", "Signal"
             )
         ),
         noise_rows("mediated_chains"),
         tibble(
             dataset = "confounding",
-            feature = paste0("x", 1:4),
+            feature = paste0("x", 1:6),
             null_type = "Causal null"
         ),
         noise_rows("confounding"),
         tibble(
             dataset = "quadratic",
-            feature = paste0("x", 1:4),
+            feature = paste0("x", 1:6),
             null_type = "Marginal null"
         ),
         noise_rows("quadratic")
@@ -260,4 +260,210 @@ bump_panel <- function(ds) {
         ) +
         theme(axis.text.x = element_text(angle = 90, size = 7)) +
         labs(title = ds, x = NULL, y = "Rank")
+}
+
+# minSHAP mediated-chain diagnostic --------------------------------------
+
+#' Load and wrangle one run's sampled mediated-chain contribution details.
+#'
+#' @param stem file stem, e.g. "mediated_chains_5000_regression_2026"
+#' @param results_dir results directory
+#' @param feature_order feature display order (default FEATURE_ORDER)
+#' @return list(contributions, membership, aggregates)
+load_mediated_contributions <- function(
+    stem, results_dir, feature_order = FEATURE_ORDER
+) {
+    contributions <- read_csv(
+        path(results_dir, glue("{stem}_risk_contributions.csv")),
+        show_col_types = FALSE
+    ) |>
+        mutate(
+            target = factor(target, levels = feature_order),
+            ordering_sorted = reorder_within(ordering, contribution, target)
+        )
+
+    membership_cols <- paste0("in_", feature_order)
+    membership <- contributions |>
+        select(ordering_sorted, target, all_of(membership_cols)) |>
+        pivot_longer(
+            all_of(membership_cols),
+            names_to = "coalition_feature",
+            names_prefix = "in_",
+            values_to = "included"
+        ) |>
+        mutate(
+            coalition_feature = factor(coalition_feature, levels = feature_order)
+        )
+
+    aggregates <- contributions |>
+        group_by(ordering, target) |>
+        summarize(contribution = first(contribution), .groups = "drop") |>
+        group_by(target) |>
+        summarize(
+            shapley = mean(contribution),
+            minshap = min(contribution),
+            .groups = "drop"
+        ) |>
+        pivot_longer(
+            c(shapley, minshap), names_to = "aggregation", values_to = "importance"
+        ) |>
+        mutate(
+            aggregation = recode(
+                aggregation,
+                shapley = "Shapley (mean)", minshap = "minSHAP (minimum)"
+            )
+        )
+
+    list(contributions = contributions, membership = membership, aggregates = aggregates)
+}
+
+#' Subset and re-level the mediated-chain tables to a chosen set of targets.
+#'
+#' Shared by the full and condensed contribution-focus figures: each fixes a
+#' set of targets (features being added) and needs matching membership, bar,
+#' and coalition-outline tables to plot them.
+#'
+#' @param membership `load_mediated_contributions()$membership`
+#' @param contributions `load_mediated_contributions()$contributions`
+#' @param targets target features to keep, in the order they should be
+#'   faceted
+#' @param feature_order feature display order for the coalition_feature axis
+#'   (default FEATURE_ORDER)
+#' @return list(membership, bars, outline)
+mediated_focus_data <- function(
+    membership, contributions, targets, feature_order = FEATURE_ORDER
+) {
+    membership <- membership |>
+        filter(target %in% targets) |>
+        mutate(target = factor(target, levels = targets))
+    bars <- contributions |>
+        filter(target %in% targets) |>
+        mutate(
+            target = factor(target, levels = targets),
+            contribution_sign = if_else(contribution >= 0, "positive", "negative")
+        )
+    outline <- membership |>
+        distinct(ordering_sorted, target) |>
+        mutate(
+            coalition_feature = factor(as.character(target), levels = feature_order)
+        )
+    list(membership = membership, bars = bars, outline = outline)
+}
+
+#' Coalition-membership tile plot for the mediated-chain diagnostic.
+#'
+#' Grey cells mark the predecessor coalition S; the orange outline marks the
+#' target feature j itself.
+#'
+#' @param membership one panel per target's coalition membership, see
+#'   `mediated_focus_data()$membership`
+#' @param outline rows to outline, see `mediated_focus_data()$outline`
+#' @param subtitle plot subtitle
+#' @param title plot title
+mediated_membership_plot <- function(
+    membership, outline, subtitle,
+    title = "Coalitions for mediated chains"
+) {
+    ggplot(membership, aes(coalition_feature, ordering_sorted)) +
+        geom_tile(
+            aes(fill = factor(included)), color = "white", linewidth = 0.25
+        ) +
+        geom_tile(
+            data = outline, fill = NA, color = "#bf3600", linewidth = 0.9
+        ) +
+        facet_wrap(~target, ncol = 3, scales = "free_y") +
+        scale_fill_manual(
+            values = c(`0` = "#f5f5f5", `1` = "#737373"),
+            labels = c(`0` = "Absent", `1` = "In S"),
+            name = "Coalition"
+        ) +
+        scale_y_reordered() +
+        labs(
+            title = title, subtitle = subtitle,
+            x = "Feature", y = "Sampled ordering"
+        ) +
+        theme(
+            axis.text.x = element_text(angle = 90, hjust = 1),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            panel.grid = element_blank()
+        )
+}
+
+#' Edge-term bar plot for the mediated-chain diagnostic.
+#'
+#' Bars show the actual sampled I_j(S) = V(S union j) - V(S), one panel per
+#' target j.
+#'
+#' @param bars one panel per target's contributions, see
+#'   `mediated_focus_data()$bars`
+mediated_bars_plot <- function(bars) {
+    ggplot(bars, aes(contribution, ordering_sorted, fill = contribution_sign)) +
+        geom_col(width = 0.75, color = axiom_palette$ink) +
+        geom_vline(xintercept = 0, color = axiom_palette$ink, linewidth = 0.35) +
+        facet_wrap(~target, ncol = 3, scales = "free_y") +
+        scale_fill_manual(
+            values = c(positive = "#020202", negative = "#f3f3f3"),
+            guide = "none"
+        ) +
+        scale_y_reordered() +
+        labs(
+            title = expression("Contributions" * I[j](S)),
+            x = expression(I[j](S)), y = NULL
+        ) +
+        theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+}
+
+#' Hinton diagram of aggregated Shapley/minSHAP importances.
+#'
+#' Square area encodes |importance| and fill encodes sign.
+#'
+#' @param aggregates (target, aggregation, importance) table, see
+#'   `load_mediated_contributions()$aggregates`
+#' @param feature_order feature display order for the x axis (default
+#'   FEATURE_ORDER)
+mediated_hinton_plot <- function(aggregates, feature_order = FEATURE_ORDER) {
+    hinton_scale <- max(abs(aggregates$importance), na.rm = TRUE)
+    hinton <- aggregates |>
+        mutate(
+            side = sqrt(abs(importance) / hinton_scale),
+            sign = if_else(importance >= 0, "Positive", "Negative"),
+            target_num = as.numeric(target),
+            aggregation_num = as.numeric(factor(
+                aggregation, levels = c("Shapley (mean)", "minSHAP (minimum)")
+            ))
+        )
+
+    ggplot(hinton) +
+        geom_tile(
+            aes(target_num, aggregation_num),
+            width = 1, height = 1, fill = "#bdbdbd"
+        ) +
+        geom_rect(aes(
+            xmin = target_num - 0.44 * side,
+            xmax = target_num + 0.44 * side,
+            ymin = aggregation_num - 0.44 * side,
+            ymax = aggregation_num + 0.44 * side,
+            fill = sign
+        )) +
+        scale_x_continuous(
+            breaks = seq_along(feature_order),
+            labels = feature_order,
+            expand = c(0, 0)
+        ) +
+        scale_y_continuous(
+            breaks = 1:2,
+            labels = c("SHAP", "minSHAP"),
+            limits = c(2.55, 0.45),
+            expand = c(0, 0)
+        ) +
+        scale_fill_manual(
+            values = c(Positive = "#252525", Negative = "white"), name = "Sign"
+        ) +
+        coord_fixed() +
+        labs(
+            title = "Shapley and minSHAP",
+            x = "Feature", y = NULL
+        ) +
+        theme(panel.grid = element_blank())
 }
