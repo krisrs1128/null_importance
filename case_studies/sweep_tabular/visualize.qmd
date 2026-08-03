@@ -404,7 +404,7 @@ mediated_aggregates <- mediated$aggregates
 ```{r fig-mediated-contribution-focus, fig.width=15, fig.height=18}
 focus <- mediated_focus_data(mediated_membership, mediated_contributions, FEATURE_ORDER)
 p_mediated_focus <- mediated_membership_plot(
-    focus$membership, focus$outline,
+    focus$membership, focus$outline
 ) | mediated_bars_plot(focus$bars)
 p_mediated_focus
 
@@ -421,7 +421,7 @@ highlight <- mediated_focus_data(
 )
 p_mediated_highlight <- mediated_membership_plot(
     highlight$membership, highlight$outline,
-    title = "Coalitions",
+    title = "Coalitions"
 ) | mediated_bars_plot(highlight$bars)
 p_mediated_highlight
 
