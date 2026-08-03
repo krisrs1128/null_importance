@@ -72,6 +72,13 @@ risk:
     n_estimators: 50
     max_depth: 3
 
+# gather focused data to understand shap vs. minshap
+# in the risk-formulation v(S) = -E[l(f(X[s], y)]
+risk_summaries:
+  enabled: true
+  save_contributions: true
+  contribution_datasets: [mediated_chains]
+
 knockoffs:
   fdr: 0.1
   max_features: 500

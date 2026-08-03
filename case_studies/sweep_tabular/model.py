@@ -60,7 +60,7 @@ def _score_highly_correlated_dependent(X_df, cfg):
 @register_score("mediated_chains")
 def _score_mediated_chains(X_df, cfg):
     terminal_indices = chain_terminal_indices(
-        cfg["n_nonnull"], cfg.get("chain_length", 2)
+        cfg["n_nonnull"], cfg.get("chain_length", 3)
     )
     cols = [X_df[f"x{j + 1}"] for j in terminal_indices]
     return MEAN_FNS["mediated_chains"](cols, cfg)

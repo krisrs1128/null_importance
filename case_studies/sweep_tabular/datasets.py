@@ -302,7 +302,7 @@ def mediated_chains(n, rng, cfg):
     """
     # extract relevant parameters
     n_nonnull, n_features, _ = _dim(cfg)
-    chain_length = cfg.get("chain_length", 2)
+    chain_length = cfg.get("chain_length", 3)
     transition_noise = cfg.get("transition_noise", 1.0)
     terminal_indices = chain_terminal_indices(n_nonnull, chain_length)
 
