@@ -361,7 +361,7 @@ mediated_focus_data <- function(
 #' @param subtitle plot subtitle
 #' @param title plot title
 mediated_membership_plot <- function(
-    membership, outline, subtitle,
+    membership, outline,
     title = "Coalitions for mediated chains"
 ) {
     ggplot(membership, aes(coalition_feature, ordering_sorted)) +
@@ -378,10 +378,7 @@ mediated_membership_plot <- function(
             name = "Coalition"
         ) +
         scale_y_reordered() +
-        labs(
-            title = title, subtitle = subtitle,
-            x = "Feature", y = "Sampled ordering"
-        ) +
+        labs(title = title, x = "Feature", y = "Sampled ordering") +
         theme(
             axis.text.x = element_text(angle = 90, hjust = 1),
             axis.text.y = element_blank(),

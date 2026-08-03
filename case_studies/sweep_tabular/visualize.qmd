@@ -405,7 +405,6 @@ mediated_aggregates <- mediated$aggregates
 focus <- mediated_focus_data(mediated_membership, mediated_contributions, FEATURE_ORDER)
 p_mediated_focus <- mediated_membership_plot(
     focus$membership, focus$outline,
-    subtitle = "Outline: added feature j"
 ) | mediated_bars_plot(focus$bars)
 p_mediated_focus
 
