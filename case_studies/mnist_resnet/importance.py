@@ -79,15 +79,17 @@ def attribute(
     n_shap_samples: int | str,
     ig_steps: int,
     ig_eps: float,
+    saliency_eps: float,
     seed: int,
 ) -> dict[str, pd.DataFrame]:
     """Adapt case_studies/src/explain.py::attribute to flat MNIST pixels."""
     np.random.seed(seed)
 
     ig_explainer = presets.integrated_gradients(np.zeros(N_PIXELS), ig_steps, ig_eps)
+    saliency_explainer = presets.saliency(saliency_eps)
     functions_by_label = {}
     shap_explainers_by_label = {}
-    scores = {"shap": [], "integrated_gradients": []}
+    scores = {"shap": [], "integrated_gradients": [], "saliency": []}
 
     for i, row in sample_meta.iterrows():
         target = int(row["target_label"])
@@ -103,6 +105,7 @@ def attribute(
         )
         scores["shap"].append(np.asarray(shap_values).reshape(-1))
         scores["integrated_gradients"].append(ig_explainer.explain(f, X[i]).as_array())
+        scores["saliency"].append(saliency_explainer.explain(f, X[i]).as_array())
         log.info("[%s/%s] sample_index=%s target=%s", i + 1, len(X), row["sample_index"], target)
 
     return {name: attribution_frame(sample_meta, values) for name, values in scores.items()}

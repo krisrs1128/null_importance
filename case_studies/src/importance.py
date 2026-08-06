@@ -127,14 +127,14 @@ def _subset_risk(subset, X, y, model_params, random_state):
     return float(np.mean((y - y_pred) ** 2))
 
 
-def risk_importance_details(X, y, feature_names, cfg, rng):
+def risk_importance_details(X, y, feature_names, risk_cfg, rng):
     """Compute one shared set of sampled orderings for SAGE and minSHAP.
 
     This is used to understand minSHAP vs. SHAP contributions for a single
     sample.
     """
     details = _risk_contribution_details(
-        X, y, cfg["n_orderings"], cfg["model_params"], rng
+        X, y, risk_cfg["n_orderings"], risk_cfg["model_params"], rng
     )
     contributions = details[0]
     minshap = pd.Series(
@@ -145,16 +145,16 @@ def risk_importance_details(X, y, feature_names, cfg, rng):
 
 
 @register("minshap")
-def minshap_importance(X, y, feature_names, cfg, rng):
+def minshap_importance(X, y, feature_names, risk_cfg, rng):
     """Risk-based minSHAP (2604.15107, Thm 2)."""
-    minshap, _, _ = risk_importance_details(X, y, feature_names, cfg, rng)
+    minshap, _, _ = risk_importance_details(X, y, feature_names, risk_cfg, rng)
     return minshap
 
 
 @register("sage")
-def sage_importance(X, y, feature_names, cfg, rng):
+def sage_importance(X, y, feature_names, risk_cfg, rng):
     """Ordinary risk-based Shapley value ("SAGE")."""
-    _, sage, _ = risk_importance_details(X, y, feature_names, cfg, rng)
+    _, sage, _ = risk_importance_details(X, y, feature_names, risk_cfg, rng)
     return sage
 
 

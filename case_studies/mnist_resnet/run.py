@@ -40,6 +40,8 @@ def enabled_methods(cfg: DictConfig) -> list[str]:
     methods = ["shap"]
     if OmegaConf.select(cfg, "integrated_gradients") is not None:
         methods.append("integrated_gradients")
+    if OmegaConf.select(cfg, "saliency") is not None:
+        methods.append("saliency")
     if OmegaConf.select(cfg, "local_ttest") is not None:
         methods.append("local_ttest")
     return methods
@@ -140,6 +142,7 @@ def main(cfg: DictConfig) -> None:
         n_shap_samples=cfg.explain.n_samples,
         ig_steps=int(cfg.integrated_gradients.n_steps),
         ig_eps=float(cfg.integrated_gradients.eps),
+        saliency_eps=float(cfg.saliency.eps),
         seed=seed,
     )
 
