@@ -288,12 +288,6 @@ def dependent_features(n, rng, cfg):
     return _make_df(signal + noise, feature_names), y, feature_names, meta
 
 
-@register("highly_correlated_dependent")
-def highly_correlated_dependent(n, rng, cfg):
-    """Same DGP as dependent_features, but with near-perfect anchor/proxy correlation."""
-    return dependent_features(n, rng, cfg)
-
-
 @register("mediated_chains")
 def mediated_chains(n, rng, cfg):
     """Several independent directed chains whose terminal nodes determine Y.

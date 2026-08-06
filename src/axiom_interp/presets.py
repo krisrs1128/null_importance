@@ -6,9 +6,9 @@ axes.
 """
 
 from .core import Explainer
-from .index import FeatureCoalitions, PathSteps, UnitIndices
+from .index import FeatureCoalitions, PathSteps, UnitIndices, SinglePoint
 from .intervention import BaselineMask, MarginalMask, ZeroMask
-from .atomic import MarginalContribution, PathIntegratedGradient, AblationDelta
+from .atomic import MarginalContribution, PathIntegratedGradient, AblationDelta, Gradient
 from .aggregate import ShapleyWeights, Min, Mean, Identity
 
 
@@ -52,6 +52,23 @@ def integrated_gradients(baseline, n_steps=64, eps=1e-5) -> Explainer:
         intervention=BaselineMask(baseline),  # unused by the atomic
         atomic=PathIntegratedGradient(baseline, eps=eps),
         aggregator=Mean(),
+    )
+
+
+def saliency(eps=1e-5) -> Explainer:
+    """Vanilla-gradient saliency map: score_j = df/dx_j at x.
+
+    Args:
+        eps: step size for finite-difference gradient approximation
+
+    Returns:
+        Explainer configured for saliency maps
+    """
+    return Explainer(
+        index=SinglePoint(),
+        intervention=ZeroMask(),  # unused by the atomic
+        atomic=Gradient(eps=eps),
+        aggregator=Identity(),
     )
 
 
