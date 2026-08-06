@@ -1,4 +1,4 @@
-"""Atomic Importance Statistics I_j
+git """Atomic Importance Statistics I_j
 """
 
 import numpy as np
@@ -69,6 +69,20 @@ class PathIntegratedGradient(AtomicStatistic):
 
     def __repr__(self):
         return f"PathIntegratedGradient(baseline={np.round(self.baseline, 4).tolist()}, eps={self.eps})"
+
+
+class Gradient(AtomicStatistic):
+    """df/dx_j at x: the vanilla gradient (saliency map). No baseline, no path."""
+
+    def __init__(self, eps: float = 1e-5):
+        self.eps = eps
+
+    def compute_all(self, f, intervention, elements, x) -> dict:
+        g = _grad(f, np.asarray(x, dtype=float), eps=self.eps)
+        return {j: np.asarray([g[j]]) for j in range(len(x))}
+
+    def __repr__(self):
+        return f"Gradient(eps={self.eps})"
 
 
 class AblationDelta(AtomicStatistic):

@@ -56,3 +56,14 @@ class UnitIndices(IndexSpace):
 
     def __repr__(self):
         return "UnitIndices()"
+
+
+class SinglePoint(IndexSpace):
+    """One placeholder element, for atomic statistics that don't sample or
+    path over Omega (e.g. vanilla gradients)."""
+
+    def elements(self, d: int):
+        return [None]
+
+    def __repr__(self):
+        return "SinglePoint()"
