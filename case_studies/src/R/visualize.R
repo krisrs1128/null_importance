@@ -13,7 +13,7 @@ axiom_palette <- list(
     bg = "#FFFFFF",
     grid = "#E2DBD4",
     accent = "#066AE5",
-    diverging = c("#0433DC", "#049fdc", "#E2DBD4", "#fb315d", "#dc0433")
+    diverging = rev(c("#0433DC", "#049fdc", "#E2DBD4", "#fb315d", "#dc0433"))
 )
 
 #' A minimal, warm-neutral theme for the attribution figures.

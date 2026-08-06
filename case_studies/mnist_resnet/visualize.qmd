@@ -29,11 +29,12 @@ importance_dir <- results_dir / "importance"
 fig_dir <- results_dir / "figures"
 dir_create(fig_dir)
 
-theme_set(theme_axiomatic(base_size = 11))
+theme_set(theme_axiomatic(base_size = 12))
 
 method_labels <- c(
     shap = "SHAP",
     integrated_gradients = "Int. Gradients",
+    saliency = "Saliency",
     local_ttest = "Local t-test"
 )
 ```
@@ -49,7 +50,7 @@ pixel_map <- read_csv(
 )
 
 # Read attribution files for all methods
-methods_local <- c("shap", "integrated_gradients", "local_ttest")
+methods_local <- c("shap", "integrated_gradients", "saliency", "local_ttest")
 read_attributions <- function(method) {
     read_csv(
         importance_dir / glue("{method}_attributions.csv"),
@@ -122,46 +123,49 @@ plot_digit_heatmap <- function(digit) {
     digit_images <- raw_pixels |>
         filter(sample_index %in% show_instances, true_label == digit) |>
         left_join(instance_labels, by = "sample_index") |>
-        mutate(panel = "Original digit")
+        mutate(panel = "Sample")
 
     p_image <- ggplot(digit_images, aes(x = col, y = row, fill = intensity)) +
         geom_tile() +
         scale_y_reverse() +
         scale_fill_gradient(low = "white", high = "black", guide = "none") +
         coord_fixed() +
-        facet_grid(panel ~ label) +
+        facet_grid(label ~ panel, switch = "y") +
         theme_void() +
-        theme(strip.text = element_text(size = 7))
+        theme(
+            strip.text.x = element_text(size = 12),
+            strip.text.y.left = element_text(size = 12, angle = 0),
+            strip.placement = "outside"
+        )
 
     p_attr <- ggplot(attr_methods, aes(x = col, y = row, fill = attribution_z)) +
         geom_tile() +
         scale_y_reverse() +
         scale_fill_gradientn(
             colours = axiom_palette$diverging,
-            name = "Attribution (z-score, clipped to ±4)",
+            name = "Attribution z-score",
             limits = c(-4, 4), oob = scales::squish # clip extreme values
         ) +
         coord_fixed() +
-        facet_grid(method ~ label) +
+        facet_grid(label ~ method) +
         theme_void() +
         theme(
-            strip.text.x = element_blank(),
-            strip.text.y = element_text(size = 7),
-            legend.position = "bottom",
-            legend.key.width = unit(1.5, "cm")
+            strip.text.x = element_text(size = 12),
+            strip.text.y = element_blank(),
+            legend.position = "right"
         )
 
     n_methods <- length(unique(attr_methods$method))
-    (p_image / p_attr) +
-        plot_layout(heights = c(1, n_methods)) +
+    (p_image | p_attr) +
+        plot_layout(widths = c(1, n_methods)) +
         plot_annotation(
-            title = glue("Pixel-Level Attributions for Selected Digit {digit} Instances")
+            title = glue("Local Attributions")
         )
 }
 ```
 
-```{r attribution-heatmaps-all-digits, results='asis', fig.width=12, fig.height=6}
-for (digit in 0:9) {
+```{r attribution-heatmaps-all-digits, results='asis', fig.width=10, fig.height=5}
+for (digit in 0:0) {
     cat(glue("\n\n## Digit {digit}\n\n"))
     p_heatmap <- plot_digit_heatmap(digit)
     print(p_heatmap)
