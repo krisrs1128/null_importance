@@ -101,7 +101,7 @@ def attribute(
 
         f = functions_by_label[target]
         shap_values = shap_explainers_by_label[target].shap_values(
-            X[i : i + 1], nsamples=n_shap_samples, silent=True
+            X[i : i + 1], nsamples=n_shap_samples, silent=True, l1_reg=0
         )
         scores["shap"].append(np.asarray(shap_values).reshape(-1))
         scores["integrated_gradients"].append(ig_explainer.explain(f, X[i]).as_array())
@@ -109,3 +109,33 @@ def attribute(
         log.info("[%s/%s] sample_index=%s target=%s", i + 1, len(X), row["sample_index"], target)
 
     return {name: attribution_frame(sample_meta, values) for name, values in scores.items()}
+
+
+def attribute_marginalminshap(
+    X: np.ndarray,
+    sample_meta: pd.DataFrame,
+    background: np.ndarray,
+    model: MNISTResNetFlat,
+    n_orderings: int,
+    seed: int,
+) -> pd.DataFrame:
+    """Marginal minSHAP: same coalitions/masking as shap, aggregated with min."""
+    explainers_by_label = {}
+    scores = []
+
+    for i, row in sample_meta.iterrows():
+        target = int(row["target_label"])
+        if target not in explainers_by_label:
+            explainers_by_label[target] = presets.marginalminshap(
+                background, n_orderings, seed
+            )
+
+        f = model.class_probability(target)
+        explainer = explainers_by_label[target]
+        scores.append(explainer.explain(f, X[i]).as_array())
+        log.info(
+            "[marginalminshap %s/%s] sample_index=%s target=%s",
+            i + 1, len(X), row["sample_index"], target,
+        )
+
+    return attribution_frame(sample_meta, np.asarray(scores))
