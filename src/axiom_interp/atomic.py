@@ -1,4 +1,4 @@
-git """Atomic Importance Statistics I_j
+"""Atomic Importance Statistics I_j
 """
 
 import numpy as np
