@@ -32,10 +32,11 @@ dir_create(fig_dir)
 theme_set(theme_axiomatic(base_size = 12))
 
 method_labels <- c(
-    shap = "SHAP",
-    integrated_gradients = "Int. Gradients",
     saliency = "Saliency",
-    local_ttest = "Local t-test"
+    integrated_gradients = "Int. Gradients",
+    local_ttest = "Local t-test",
+    shap = "SHAP",
+    marginalminshap = "minSHAP"
 )
 ```
 
@@ -50,7 +51,7 @@ pixel_map <- read_csv(
 )
 
 # Read attribution files for all methods
-methods_local <- c("shap", "integrated_gradients", "saliency", "local_ttest")
+methods_local <- c("shap", "marginalminshap", "integrated_gradients", "saliency", "local_ttest")
 read_attributions <- function(method) {
     read_csv(
         importance_dir / glue("{method}_attributions.csv"),
@@ -104,21 +105,21 @@ raw_pixels <- read_csv(
 plot_digit_heatmap <- function(digit) {
     show_instances <- sample_meta |>
         filter(true_label == digit) |>
-        slice(1, 6, 7) |> # one correct, two different misclassifications
+        arrange(desc(correct), desc(predicted_probability)) |>
         pull(sample_index)
 
     instance_labels <- sample_meta |>
         filter(sample_index %in% show_instances) |>
         mutate(label = ifelse(correct,
-            glue("sample {sample_index}: correct"),
-            glue("sample {sample_index}: misclass → {predicted_label}")
+            glue("sample {sample_index}\n[correct]"),
+            glue("sample {sample_index}\n[misclass → {predicted_label}]")
         )) |>
         select(sample_index, label)
 
     attr_methods <- all_long |>
         filter(sample_index %in% show_instances, true_label == digit) |>
         left_join(instance_labels, by = "sample_index") |>
-        mutate(method = recode(method, !!!method_labels))
+        mutate(method = factor(recode(method, !!!method_labels), levels = method_labels))
 
     digit_images <- raw_pixels |>
         filter(sample_index %in% show_instances, true_label == digit) |>
@@ -157,14 +158,11 @@ plot_digit_heatmap <- function(digit) {
 
     n_methods <- length(unique(attr_methods$method))
     (p_image | p_attr) +
-        plot_layout(widths = c(1, n_methods)) +
-        plot_annotation(
-            title = glue("Local Attributions")
-        )
+        plot_layout(widths = c(1, n_methods))
 }
 ```
 
-```{r attribution-heatmaps-all-digits, results='asis', fig.width=10, fig.height=5}
+```{r attribution-heatmaps-all-digits, results='asis', fig.width=9, fig.height=11}
 for (digit in 0:0) {
     cat(glue("\n\n## Digit {digit}\n\n"))
     p_heatmap <- plot_digit_heatmap(digit)

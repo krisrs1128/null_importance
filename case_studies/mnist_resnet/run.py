@@ -38,6 +38,8 @@ def enabled_methods(cfg: DictConfig) -> list[str]:
         return [str(name) for name in configured]
 
     methods = ["shap"]
+    if OmegaConf.select(cfg, "marginalminshap") is not None:
+        methods.append("marginalminshap")
     if OmegaConf.select(cfg, "integrated_gradients") is not None:
         methods.append("integrated_gradients")
     if OmegaConf.select(cfg, "saliency") is not None:
@@ -145,6 +147,16 @@ def main(cfg: DictConfig) -> None:
         saliency_eps=float(cfg.saliency.eps),
         seed=seed,
     )
+
+    if "marginalminshap" in methods:
+        attributions["marginalminshap"] = importance.attribute_marginalminshap(
+            X=X,
+            sample_meta=sample_meta,
+            background=shap_background,
+            model=model,
+            n_orderings=int(cfg.marginalminshap.n_orderings),
+            seed=seed,
+        )
 
     if "local_ttest" in methods:
         ttest_pool_probs = model.predict_proba(ttest_pool)
