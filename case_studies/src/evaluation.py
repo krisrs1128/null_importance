@@ -75,25 +75,6 @@ def load_scores(results_dir, methods):
     ]
 
 
-def coverage(scores, datasets, sample_sizes, response_types, seeds, methods):
-    """Compare observed scores for the current data block
-
-    Returns:
-        A frame with one row per configured block and columns ``dataset``,
-        ``n``, ``response_type``, ``seed``, ``method``, and ``present``.
-    """
-    grid = pd.MultiIndex.from_product(
-        [list(datasets), list(sample_sizes), list(response_types),
-         list(seeds), list(methods)],
-        names=BLOCK_KEYS,
-    ).to_frame(index=False)
-    observed = scores[BLOCK_KEYS].drop_duplicates()
-    observed["present"] = True
-    merged = grid.merge(observed, on=BLOCK_KEYS, how="left")
-    merged["present"] = merged["present"].fillna(False).astype(bool)
-    return merged
-
-
 # ---------------------------------------------------------------------------
 # Decision rule
 # ---------------------------------------------------------------------------
