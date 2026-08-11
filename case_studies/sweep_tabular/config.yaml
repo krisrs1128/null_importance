@@ -94,12 +94,51 @@ integrated_gradients:
 gcm:
   n_estimators: 100
 
+# Paper identifiers (Table 2 of Null_Importance.txt, Section 8), so figures and
+# tables can be labelled the way the manuscript refers to them. D1--D7 also sort
+# into the paper's order, which is why no separate ordering is configured.
+dataset_ids:
+  linear_additive: D1
+  quadratic: D2
+  product_interaction: D3
+  parity: D4
+  dependent_features: D5
+  confounding: D6
+  mediated_chains: D7
+
+# Notions of null importance each method nominally targets, i.e. where Table 1
+# of the paper gives it a checkmark or a tilde. Consumed by evaluate.py to flag
+# the cells the method is supposed to get right.
 categories:
-  correlation: marginal
-  permutation: risk
-  minshap: conditional
-  sage: risk
-  knockoffs: conditional
-  pdp_variance: functional
-  integrated_gradients: functional
-  gcm: conditional
+  correlation: [marginal]
+  permutation: [risk]
+  minshap: [conditional, risk]
+  sage: [marginal]
+  knockoffs: [conditional]
+  pdp_variance: [marginal, functional]
+  integrated_gradients: [functional]
+  gcm: [conditional, functional]
+
+# we don't have a permutation-importance row
+theoretical_rows:
+  correlation: correlation
+  permutation: null
+  minshap: minshap
+  sage: risk_shapley
+  knockoffs: knockoffs
+  pdp_variance: pdp_variance
+  integrated_gradients: integrated_gradients
+  gcm: gcm
+
+# Turning importance scores into null-importance test results. The decision rule
+# clips negatives to zero, divides by the block maximum, and rejects above
+# threshold`.
+evaluation:
+  threshold: 0.1
+  thresholds: [0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+  null_scopes: [all, signal]
+  table_null_scope: signal
+  pool_seeds: true
+  alpha: 0.1          # type I error target
+  power_target: 0.5   # power considered non-trivial
+  bands: [0.4, 0.8]   # fraction of dataset cells -> cross / tilde / check

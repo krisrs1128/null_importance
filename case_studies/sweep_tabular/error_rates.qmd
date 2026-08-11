@@ -1,0 +1,98 @@
+---
+title: "Null Importance as a Testing Problem"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+fig-width: 11
+fig-height: 7
+---
+
+```{r setup, include=FALSE}
+library(fs)
+library(glue)
+library(here)
+library(tidyverse)
+library(yaml)
+source(here("case_studies", "src", "R", "visualize.R"))
+source(here("case_studies", "src", "R", "error_rate_helpers.R"))
+```
+
+```{r}
+base <- path(here("case_studies", "sweep_tabular"))
+cfg <- read_yaml(base / "config.yaml")
+
+evaluation_dir <- base / "results" / "evaluation"
+fig_dir <- base / cfg$figures_dir
+dir_create(fig_dir)
+theme_set(theme_axiomatic(base_size = 12))
+```
+
+```{r}
+ev <- load_evaluation(evaluation_dir)
+theoretical <- load_theoretical_table(
+    base / "table1_theoretical.csv", cfg$theoretical_rows
+)
+
+save_fig <- function(plot, name, width = 11, height = 7) {
+    ggsave(fig_dir / name, plot, width = width, height = height)
+    plot
+}
+```
+
+- $H_0(j, \text{notion})$ means that feature $j$ is null under that notion;
+- a **type I error** calls a null feature relevant;
+- a **type II error** misses a relevant feature.
+
+```{r confusion-conditional}
+confusion_panel(ev$confusion, "conditional") |>
+    save_fig("fig_confusion_conditional.svg", height = 8)
+```
+
+```{r confusion-causal}
+confusion_panel(ev$confusion, "causal") |>
+    save_fig("fig_confusion_causal.svg", height = 8)
+```
+
+## Error rates
+
+```{r fpr}
+error_rate_heatmap(ev$pooled, "fpr", midpoint = cfg$evaluation$alpha) |>
+    save_fig("fig_type1_error.svg", height = 6)
+```
+
+```{r power}
+error_rate_heatmap(ev$pooled, "power", midpoint = cfg$evaluation$power_target) |>
+    save_fig("fig_power.svg", height = 6)
+```
+
+## Dependence on the threshold
+
+```{r pr-curves}
+pr_curve_panel(ev$sweep, "conditional") |>
+    save_fig("fig_pr_conditional.svg", height = 6)
+```
+
+```{r roc}
+roc_panel(ev$curves) |>
+    save_fig("fig_roc_auc.svg", height = 6)
+```
+
+```{r table1}
+table1_comparison_plot(ev$table1) |>
+    save_fig("fig_table1_empirical.svg", width = 8, height = 6)
+```
+
+```{r table1-numbers}
+ev$table1 |>
+    select(
+        method, notion, n_cells, controlled_fraction, powered_fraction,
+        mean_fpr, mean_power, symbol, is_target_notion
+    ) |>
+    arrange(method, notion) |>
+    knitr::kable(digits = 2)
+```

@@ -4,6 +4,7 @@
 
 library(tidyverse)
 library(glue)
+library(here)
 library(scico)
 library(FactoMineR)
 library(fs)
@@ -13,71 +14,21 @@ FEATURE_ORDER <- c(paste0("x", 1:6), paste0("noise_", 1:6))
 
 #' Labels to describe what type of null each variable encodes
 #'
-#' This will depend on choices in the configuration. So not general purpose, but
-#' should be enough for making the visualizations.
+#' @param evaluation_dir directory holding null_labels.csv
 #' @return tibble(dataset, feature, null_type)
-null_type_table <- function() {
-    noise_cols <- paste0("noise_", 1:6)
-    noise_rows <- \(dataset) {
-        tibble(dataset = dataset, feature = noise_cols, null_type = "Null")
+null_type_table <- function(
+    evaluation_dir = path(here("case_studies", "sweep_tabular"), "results", "evaluation")
+) {
+    labels_path <- path(evaluation_dir, "null_labels.csv")
+    if (!file_exists(labels_path)) {
+        stop(glue(
+            "{labels_path} not found. Run `python case_studies/sweep_tabular/evaluate.py` ",
+            "to derive the null-type ground truth from datasets.py."
+        ))
     }
 
-    bind_rows(
-        tibble(
-            dataset = "linear_additive",
-            feature = paste0("x", 1:6),
-            null_type = "Signal"
-        ),
-        noise_rows("linear_additive"),
-        tibble(
-            dataset = "parity",
-            feature = paste0("x", 1:6),
-            null_type = "Marginal null"
-        ),
-        noise_rows("parity"),
-        tibble(
-            dataset = "product_interaction",
-            feature = paste0("x", 1:6),
-            null_type = "Marginal null"
-        ),
-        noise_rows("product_interaction"),
-        tibble(
-            dataset = "dependent_features",
-            feature = c("x1", "x2", "x3", "x4", "x5", "x6"),
-            null_type = c(
-                "Signal", "Conditional null", "Signal", "Conditional null", "Signal", "Conditional null"
-            )
-        ),
-        noise_rows("dependent_features"),
-        tibble(
-            dataset = "highly_correlated_dependent",
-            feature = c("x1", "x2", "x3", "x4", "x5", "x6"),
-            null_type = c(
-                "Signal", "Conditional null", "Signal", "Conditional null", "Signal", "Conditional null"
-            )
-        ),
-        noise_rows("highly_correlated_dependent"),
-        tibble(
-            dataset = "mediated_chains",
-            feature = c("x1", "x2", "x3", "x4", "x5", "x6"),
-            null_type = c(
-                "Conditional null", "Conditional null", "Signal","Conditional null", "Conditional null", "Signal"
-            )
-        ),
-        noise_rows("mediated_chains"),
-        tibble(
-            dataset = "confounding",
-            feature = paste0("x", 1:6),
-            null_type = "Causal null"
-        ),
-        noise_rows("confounding"),
-        tibble(
-            dataset = "quadratic",
-            feature = paste0("x", 1:6),
-            null_type = "Marginal null"
-        ),
-        noise_rows("quadratic")
-    )
+    read_csv(labels_path, show_col_types = FALSE) |>
+        select(dataset, feature, null_type = null_label)
 }
 
 #' Null-type color scale
@@ -85,7 +36,8 @@ null_type_table <- function() {
 #'   appear in the legend
 null_type_colors <- function(
     null_types = c(
-        "Signal", "Marginal null", "Conditional null", "Causal null", "Null"
+        "Signal", "Marginal null", "Conditional null", "Risk null",
+        "Functional null", "Causal null", "Null"
     )
 ) {
     setNames(scico(length(null_types), palette = "berlin"), null_types)
