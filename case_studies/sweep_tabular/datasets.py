@@ -33,6 +33,7 @@ import pandas as pd
 from means import MEAN_FNS, chain_terminal_indices
 
 DATASETS = {}
+NULL_NOTIONS = ("marginal", "conditional", "risk", "functional", "causal")
 
 def register(name):
     def decorator(fn):
@@ -93,7 +94,7 @@ def _dim(cfg):
 
 
 def _full_null():
-    return ["functional", "marginal", "conditional", "causal"]
+    return list(NULL_NOTIONS)
 
 
 def _simulate_response(n, rng, cfg, name, mean_cols):
@@ -158,11 +159,12 @@ def _build_chain_signal(n, n_nonnull, chain_length, transition_noise, rng):
 def _build_chain_null_type(n_nonnull, terminal_indices):
     """Build null_type for mediated_chains.
 
-    Terminal nodes are non-null ([]); internal chain nodes are
-    conditionally null (["conditional"]).
+    Terminal nodes are non-null ([]); internal chain nodes are null under the
+    conditional, risk, and functional notions (but not marginal or causal).
     """
+    internal = ["conditional", "risk", "functional"]
     return {
-        f"x{j + 1}": ([] if j in terminal_indices else ["conditional"])
+        f"x{j + 1}": ([] if j in terminal_indices else list(internal))
         for j in range(n_nonnull)
     }
 
@@ -255,7 +257,8 @@ def dependent_features(n, rng, cfg):
     """E[Y|z] = gamma·sum(z_j).
 
     Defined by x_{2j-1} = z_j (anchor), x_{2j} = z_j + ε (proxy).
-    The anchors are non-null and the proxies are conditionally null.
+    The anchors are non-null; the proxies are null under every notion except
+    the marginal one (they correlate with their anchor).
     """
     n_nonnull, n_features, _ = _dim(cfg)
     if n_nonnull % 2 != 0:
@@ -276,9 +279,10 @@ def dependent_features(n, rng, cfg):
 
     noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "dependent_features", latents)
     feature_names = _make_feature_names(n_nonnull, n_features)
+    proxy_null = ["conditional", "risk", "functional", "causal"]
     null_type = {}
     for j in range(n_nonnull):
-        null_type[f"x{j + 1}"] = [] if j % 2 == 0 else ["conditional"]
+        null_type[f"x{j + 1}"] = [] if j % 2 == 0 else list(proxy_null)
     meta = _build_meta(
         feature_names, n_nonnull, null_type,
         equation="E[Y|z] = gamma * sum(z_j), x_{2j-1}=z_j, x_{2j}=z_j+eps",
