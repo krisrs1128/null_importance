@@ -119,10 +119,7 @@ categories:
   integrated_gradients: [functional]
   gcm: [conditional, functional]
 
-# Which row of table1_theoretical.csv each swept method corresponds to for the
-# theoretical comparison plot in error_rates.qmd. sage is the Shapley value of
-# the risk game, i.e. Table 1's "Risk-based Shapley"; the paper has no
-# permutation-importance row, so it is left without a counterpart.
+# we don't have a permutation-importance row
 theoretical_rows:
   correlation: correlation
   permutation: null
@@ -133,16 +130,12 @@ theoretical_rows:
   integrated_gradients: integrated_gradients
   gcm: gcm
 
-# Turning importance scores into null-importance test decisions.
+# Turning importance scores into null-importance test results. The decision rule
+# clips negatives to zero, divides by the block maximum, and rejects above
+# threshold`.
 evaluation:
-  # The decision rule clips negatives to zero, divides by the block maximum,
-  # and rejects above `threshold`. At threshold 0 this is the paper's
-  # population criterion (reject unless the score is exactly zero).
   threshold: 0.1
   thresholds: [0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
-  # `all` includes the iid noise pads in the null class; `signal` keeps only the
-  # structural nulls (proxies, chain internals, confounded features), which is
-  # the harder and more informative comparison.
   null_scopes: [all, signal]
   table_null_scope: signal
   pool_seeds: true
