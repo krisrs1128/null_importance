@@ -1,14 +1,12 @@
-"""Save minSHAP/Shapley summaries and sampled conditional contributions.
+"""Save the sampled conditional contributions behind minSHAP and Shapley.
 
-Record the ``VI_j(S)`` terms producing the SHAP and minSHAP values
-
-Run from the repository root:
+Record the ``VI_j(S)`` terms producing the SHAP and minSHAP values, for the
+datasets named under ``risk_summaries`` in config.yaml. sweep.py computes the
+minSHAP and Shapley values themselves.  This command recomputes every (dataset,
+response type, sample size, seed) combination and overwrites the output with new
+orderings.
 
     python case_studies/sweep_tabular/risk_summaries.py
-
-
-Whether this runs in sweep.py can be configured using the ``risk_summaries``
-group in ``config.yaml``.
 """
 
 import logging
@@ -29,47 +27,19 @@ from importance import risk_importance_details
 log = logging.getLogger(__name__)
 
 
-def _save_importance(results_dir: Path, stem: str, values: pd.Series) -> None:
-    pd.DataFrame({
-        "feature": values.index,
-        "importance": values.values,
-    }).to_csv(results_dir / f"{stem}.csv", index=False)
-
-
-def save_risk_summaries(
-    *,
-    results_dir,
-    stem,
-    X,
-    y,
-    feature_names,
-    risk_cfg,
-    rng,
-    save_minshap=True,
-    save_shapley=True,
-    save_contributions=False,
-):
-    """Compute and save summaries from one shared collection of orderings."""
-    minshap, shapley, contributions = risk_importance_details(
+def save_risk_summaries(*, results_dir, stem, X, y, feature_names, risk_cfg, rng):
+    """Save one shared sample of orderings, from which both values are reduced."""
+    _, _, contributions = risk_importance_details(
         X, y, feature_names, risk_cfg, rng
     )
-
-    results_dir = Path(results_dir)
-    if save_minshap:
-        _save_importance(results_dir, f"{stem}_minshap", minshap)
-    if save_shapley:
-        # Preserve the existing case-study method name for risk-Shapley.
-        _save_importance(results_dir, f"{stem}_sage", shapley)
-    if save_contributions:
-        contributions.to_csv(
-            results_dir / f"{stem}_risk_contributions.csv",
-            index=False,
-        )
+    contributions.to_csv(
+        Path(results_dir) / f"{stem}_risk_contributions.csv", index=False
+    )
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg: DictConfig) -> None:
-    if not cfg.risk_summaries.enabled:
+    if not (cfg.risk_summaries.enabled and cfg.risk_summaries.save_contributions):
         log.info("Risk summary collection is disabled.")
         return
 
@@ -77,11 +47,10 @@ def main(cfg: DictConfig) -> None:
     data_dir = SCRIPT_DIR / "data"
     results_dir = SCRIPT_DIR / "results"
     results_dir.mkdir(exist_ok=True)
-    contribution_datasets = set(cfg.risk_summaries.contribution_datasets)
 
     for seed in cfg.seeds:
         rng = np.random.default_rng(seed)
-        for dataset in cfg.datasets:
+        for dataset in cfg.risk_summaries.contribution_datasets:
             for response_type in cfg.response_types:
                 for n in cfg.sample_sizes:
                     stem = f"{dataset}_{n}_{response_type}_{seed}"
@@ -97,12 +66,6 @@ def main(cfg: DictConfig) -> None:
                         feature_names=list(X_df.columns),
                         risk_cfg=cfg_dict["risk"],
                         rng=rng,
-                        save_minshap=cfg.methods.minshap,
-                        save_shapley=cfg.methods.sage,
-                        save_contributions=(
-                            cfg.risk_summaries.save_contributions
-                            and dataset in contribution_datasets
-                        ),
                     )
 
 
