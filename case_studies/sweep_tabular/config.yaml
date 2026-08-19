@@ -5,18 +5,173 @@ hydra:
   job:
     chdir: false
 
-# Global dimensionality definition
+parallel:
+  n_jobs: -1
+
+# We generate new datasets for each seed.
+seeds: [2026, 2027, 2028, 2029, 2030, 2031, 2032]
+figures_dir: results/figures
+
+# We're not running TreeSHAP in this run because we're using the simulated data
+# itself to mimic what a prediction model would give.
+methods:
+  correlation: true
+  permutation: true
+  minshap: true
+  sage: true
+  knockoffs: true
+  pdp_variance: true
+  integrated_gradients: true
+  gcm: true
+  lasso: true
+  loco: true
+  mdi: true
+  treeshap: false
+
+###############################################################################
+## Metadata about the example generating processes
+###############################################################################
+
+# Short-hand IDs that we'll use throughout the visualization code
+dataset_ids:
+  linear_additive: D1
+  quadratic: D2
+  product_interaction: D3
+  parity: D4
+  dependent_features: D5
+  confounding: D6
+  mediated_chains: D7
+  redundant_pair: D8
+  bayes_incomplete: D9
+  heteroscedastic: D10
+
+# Notions of null importance each method nominally targets, i.e. where Table 1
+# of the paper gives it a checkmark or a tilde. Consumed by evaluate.py to flag
+# the cells the method is supposed to get right.
+categories:
+  correlation: [marginal]
+  permutation: [risk]
+  minshap: [conditional, risk]
+  sage: [marginal]
+  knockoffs: [conditional]
+  pdp_variance: [marginal, functional]
+  integrated_gradients: [functional]
+  gcm: [conditional, functional]
+  lasso: [marginal, conditional, risk]
+  loco: [conditional, risk]
+  mdi: [marginal]
+
+# we don't have a permutation-importance row
+theoretical_rows:
+  correlation: correlation
+  permutation: null
+  minshap: minshap
+  sage: risk_shapley
+  knockoffs: knockoffs
+  pdp_variance: pdp_variance
+  integrated_gradients: integrated_gradients
+  gcm: gcm
+  lasso: lasso
+  loco: loco
+  mdi: mdi
+
+# Turning importance scores into null-importance test results. A feature is
+# called non-null when its score beats the iid pads in the same block at level
+# `alpha`. Pads are null under every notion, so they are a reference the
+# methods' differing scales cannot distort; `alphas` lists the attainable
+# levels k/13 for the precision-recall sweep.
+
+
+# Some hyperparameters When running and visualizing the experiments. We
+# calibrate the null importance rejection threshold using alpha and the fully
+# noise features.
+#
+# Vance defines the thresholds used to define tilde versus checkmark in our table 1 analog.
+evaluation:
+  alpha: 0.1
+  alphas: [0.08, 0.16, 0.24, 0.31, 0.39, 0.47, 0.54, 0.62, 0.70, 0.77, 0.85, 0.93, 1.0]
+  pool_seeds: true
+  power_target: 0.5   # power considered non-trivial
+  bands: [0.4, 0.8]
+  response_type: regression
+
+# Here is a machine-readable summary of the counterexamples listed in the paper,
+# and which this simulation sweep attempts to formalie
+counterexamples:
+  - id: Example 3.1
+    title: Marginal null does not imply conditional null
+    dataset: parity
+    features: [x1, x2]
+    null_under: [marginal]
+    expect_zero: [correlation]
+    expect_nonzero: [gcm, knockoffs, permutation, pdp_variance]
+  - id: Example 3.3
+    title: Conditional statistical null without functional null
+    dataset: redundant_pair
+    features: [x2, x4, x6]
+    null_under: [conditional, risk]
+    expect_zero: [knockoffs, gcm, lasso, loco, minshap]
+    expect_nonzero: [integrated_gradients, pdp_variance, correlation]
+  - id: Example 3.4
+    title: Failure of Bayes-completeness
+    dataset: bayes_incomplete
+    features: [x2, x4, x6]
+    null_under: [conditional, functional, causal]
+    expect_zero: [integrated_gradients, pdp_variance, gcm, knockoffs]
+    expect_nonzero: [loco, correlation]
+  - id: Example 3.5
+    title: Causal importance without conditional statistical importance
+    dataset: mediated_chains
+    features: [x1, x2, x4, x5]
+    null_under: [conditional, risk, functional]
+    expect_zero: [knockoffs, gcm, minshap, permutation, pdp_variance]
+    expect_nonzero: [correlation, sage]
+  - id: Example 4.1
+    title: Risk-based Shapley credits an indirect chain contribution
+    dataset: mediated_chains
+    features: [x1, x2, x4, x5]
+    null_under: [risk]
+    expect_zero: [minshap, loco]
+    expect_nonzero: [sage]
+  - id: Example 4.2
+    title: MDI splits importance across duplicated features
+    dataset: redundant_pair
+    features: [x2, x4, x6]
+    null_under: [conditional]
+    expect_zero: [knockoffs, gcm]
+    expect_nonzero: [mdi]
+  - id: Lemma 2
+    title: Risk and conditional nullity part when the loss ignores the variance
+    dataset: heteroscedastic
+    features: [x2, x4, x6]
+    null_under: [risk, functional]
+    expect_zero: [loco, permutation, pdp_variance, integrated_gradients]
+    expect_nonzero: [gcm, knockoffs]
+    note: >
+      The expect_nonzero row is what conditional relevance demands, not what we
+      predict: GCM residualizes the conditional mean and the knockoff filter uses
+      a lasso statistic, so both are expected to miss this feature. A failure
+      here is the finding, and is the empirical content of the one-sided tilde
+      Table 1 gives GCM in the conditional column.
+
+###############################################################################
+## Hyperparameters that we use when generating each dataset
+###############################################################################
+
+# Number of features used across all datasets
 dimensions:
-  n_features: 12
+  n_features: 18
   n_nonnull: 6
 
+# Parameter is used when generating the individual datasets
 datasets:
   linear_additive:
-    beta: 4.0   # same across all n_nonnull signal features
+    beta: 4.0
     sigma_y: 1.0
   parity:
     gamma: 3.0
     sigma_y: 1.0
+    group_size: 2
   product_interaction:
     gamma: 3.0
     sigma_y: 1.0
@@ -37,40 +192,58 @@ datasets:
     gamma: 3.0
     sigma_y: 1.0
 
+  # Example 3.3 (Conditional statistical null without functional null) but with
+  # some noise to avoid numerical issues. Example 4.2 (MDI fails to respect the
+  # conditional null importance) comes from setting feature_dist: bernoulli
+  redundant_pair:
+    gamma: 3.0
+    sigma_y: 1.0
+    duplicate_noise: 0.3
+    feature_dist: normal
+
+  # Example 3.4. Conditionally/functionally but not risk null.
+  bayes_incomplete:
+    gamma: 3.0
+    sigma_y: 1.0
+    proxy_noise: 0.05
+    risk_class: linear
+
+  # Risk and functional null, but conditionally nonnull
+  heteroscedastic:
+    gamma: 3.0
+    sigma_y: 1.0
+    variance_scale: 1.0
+    response_types: [regression]
+
 response_types: [classification, regression]
 sample_sizes: [50, 500, 5000]
 
-# One generate+sweep run per seed. seeds[0] is the canonical seed used by the
-# single-run panels in visualize.qmd; the rest exist to see run-to-run spread
-# (e.g. the correlation-vs-knockoffs divergence figure).
-seeds: [2026, 3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009]
-
-figures_dir: results/figures
-
-# We aren't running mdi, treeshap, or loco because they need actual tree
-# structured models (at least in our assumed implementations) and the synthetic
-# data experiment assumes the simulated response as the model output
-methods:
-  correlation: true
-  permutation: true
-  minshap: true
-  sage: true
-  knockoffs: true
-  pdp_variance: true
-  integrated_gradients: true
-  gcm: true
-  mdi: false
-  treeshap: false
-  loco: false
+###############################################################################
+## Method-specific hyperparameters
+###############################################################################
 
 permutation:
   n_repeats: 100
 
 risk:
-  n_orderings: 30
+  n_orderings: 200
+  test_size: 0.3
+  default_class: rich # vs. linear
   model_params:
     n_estimators: 50
     max_depth: 3
+  linear_params:
+    alpha: 1.0
+
+# This tells loco to actually refit a model rather than simply using out-of-bag
+# errors
+loco:
+  estimator: risk_class
+
+# Forest fitted on the data for the methods in FITTED_MODEL_METHODS.
+surrogate:
+  n_estimators: 200
+  min_samples_leaf: 5
 
 # gather focused data to understand shap vs. minshap
 # in the risk-formulation v(S) = -E[l(f(X[s], y)]
@@ -93,52 +266,3 @@ integrated_gradients:
 
 gcm:
   n_estimators: 100
-
-# Paper identifiers (Table 2 of Null_Importance.txt, Section 8), so figures and
-# tables can be labelled the way the manuscript refers to them. D1--D7 also sort
-# into the paper's order, which is why no separate ordering is configured.
-dataset_ids:
-  linear_additive: D1
-  quadratic: D2
-  product_interaction: D3
-  parity: D4
-  dependent_features: D5
-  confounding: D6
-  mediated_chains: D7
-
-# Notions of null importance each method nominally targets, i.e. where Table 1
-# of the paper gives it a checkmark or a tilde. Consumed by evaluate.py to flag
-# the cells the method is supposed to get right.
-categories:
-  correlation: [marginal]
-  permutation: [risk]
-  minshap: [conditional, risk]
-  sage: [marginal]
-  knockoffs: [conditional]
-  pdp_variance: [marginal, functional]
-  integrated_gradients: [functional]
-  gcm: [conditional, functional]
-
-# we don't have a permutation-importance row
-theoretical_rows:
-  correlation: correlation
-  permutation: null
-  minshap: minshap
-  sage: risk_shapley
-  knockoffs: knockoffs
-  pdp_variance: pdp_variance
-  integrated_gradients: integrated_gradients
-  gcm: gcm
-
-# Turning importance scores into null-importance test results. The decision rule
-# clips negatives to zero, divides by the block maximum, and rejects above
-# threshold`.
-evaluation:
-  threshold: 0.1
-  thresholds: [0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
-  null_scopes: [all, signal]
-  table_null_scope: signal
-  pool_seeds: true
-  alpha: 0.1          # type I error target
-  power_target: 0.5   # power considered non-trivial
-  bands: [0.4, 0.8]   # fraction of dataset cells -> cross / tilde / check
