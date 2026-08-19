@@ -198,7 +198,7 @@ datasets:
   redundant_pair:
     gamma: 3.0
     sigma_y: 1.0
-    duplicate_noise: 0.3
+    duplicate_noise: 0.01
     feature_dist: normal
 
   # Example 3.4. Conditionally/functionally but not risk null.
