@@ -21,12 +21,15 @@ and regression
 
 Mean formulas (s(x) denotes signal function):
     linear_additive: s(x) = beta * sum(x_j)
-    parity: s(x) = -gamma * prod(sign(x_j)), x_j ∈ U[-1,1]
+    parity: s(x) = -gamma * sum over groups of prod(sign(x_j)), x_j ∈ U[-1,1]
     product_interaction: s(x) = gamma * sum_k(x_{2k-1} * x_{2k})
     dependent_features: s(x) = gamma * sum_j(z_j), with x_{2j-1}=z_j, x_{2j}=z_j+eps
     mediated_chains: x_j=x_{j-1}+eps within chains; s(x) uses each terminal
     confounding: s(x) = gamma * sum_j(z_j), with x_j=z_j+eps (z_j unobserved)
     quadratic: s(x) = gamma * sum(x_j^2 - 1)
+    redundant_pair: s(x) = gamma * sum_k(z_k), with x_{2k-1}=x_{2k}=z_k
+    bayes_incomplete: s(x) = gamma * sum_k(u_k^2 - 1/3), with x_{2k}=u_k^2+eps
+    heteroscedastic: s(x) = gamma * sum_k(m_k); x_{2k} rescales the noise
 """
 import numpy as np
 import pandas as pd
@@ -50,7 +53,7 @@ def _sigmoid(z):
     return 1.0 / (1.0 + np.exp(-z))
 
 
-def _make_response(rng, mean, response_type, sigma_y):
+def _make_response(rng, mean, response_type, sigma_y, scale=None):
     """Generate response variable
 
     Args:
@@ -58,16 +61,19 @@ def _make_response(rng, mean, response_type, sigma_y):
         mean: np.ndarray of mean values
         response_type: 'classification' or 'regression'
         sigma_y: noise std for regression (ignored for classification)
+        scale: rescale the regression errors by this scale, not used by
+        classification.
 
     Returns:
         np.ndarray: response values (int for classification, float for regression)
     """
     if response_type == "classification":
+        if scale is not None:
+            raise ValueError("heteroscedastic noise is only defined for regression; a ")
         return rng.binomial(1, _sigmoid(mean))
-    elif response_type == "regression":
-        return mean + sigma_y * rng.standard_normal(len(mean))
-    else:
-        raise ValueError(f"Unknown response_type: {response_type}. Use 'classification' or 'regression'.")
+
+    noise = sigma_y * rng.standard_normal(len(mean))
+    return mean + (noise if scale is None else scale * noise)
 
 
 def _make_feature_names(n_nonnull, n_features):
@@ -82,25 +88,61 @@ def _null_cols(rng, n_noise, n):
     return [rng.standard_normal(n) for _ in range(n_noise)]
 
 
+def _build_latent_pairs(n, n_groups, rng, pair_noise, feature_dist="normal"):
+    """
+    This draws pairs of nearly identical features, similar to what's needed in
+    example 3.3 and 4.2.
+    """
+    draw_latent = (
+        rng.standard_normal
+        if feature_dist == "normal"
+        else lambda size: rng.binomial(1, 0.5, size=size).astype(float)
+    )
+
+    signal, latents = [], []
+    for _ in range(n_groups):
+        z = draw_latent(n)
+        latents.append(z)
+        signal.extend([z, z + pair_noise * rng.standard_normal(n)])
+
+    return signal, latents
+
+
+def _pair_null_type(n_nonnull, anchor_null, proxy_null):
+    """Assign labels to the anchor and (null) proxy in each pair."""
+    return {
+        f"x{j + 1}": list(anchor_null if j % 2 == 0 else proxy_null)
+        for j in range(n_nonnull)
+    }
+
+
 def _make_df(arrays, feature_names):
     return pd.DataFrame({name: arr for name, arr in zip(feature_names, arrays)})
 
 
 def _dim(cfg):
-    """Extract (n_nonnull, n_features, n_noise) from the merged cfg dict."""
+    """Extract (n_nonnull, n_features, n_noise) from a configuration dictionary."""
     n_nonnull  = cfg.get("n_nonnull",  2)
     n_features = cfg.get("n_features", 3)
     return n_nonnull, n_features, n_features - n_nonnull
+
+
+def dataset_response_types(cfg_dict, name):
+    """Small helper function to determine the response type from a configuration dictionary"""
+    return cfg_dict["datasets"][name].get(
+        "response_types", cfg_dict["response_types"]
+    )
 
 
 def _full_null():
     return list(NULL_NOTIONS)
 
 
-def _simulate_response(n, rng, cfg, name, mean_cols):
+def _simulate_response(n, rng, cfg, name, mean_cols, scale=None):
     """Generate the null and response columns a dataset.
 
     mean_cols -- arrays passed to MEAN_FNS[name] to compute the mean
+    scale -- rescale the noise, see :func:`_make_response`
 
     Returns (noise, y, response_type, sigma_y).
     """
@@ -110,15 +152,12 @@ def _simulate_response(n, rng, cfg, name, mean_cols):
 
     noise = _null_cols(rng, n_noise, n)
     mean = MEAN_FNS[name](mean_cols, cfg)
-    y = _make_response(rng, mean, response_type, sigma_y)
+    y = _make_response(rng, mean, response_type, sigma_y, scale=scale)
     return noise, y, response_type, sigma_y
 
 
 def _build_meta(feature_names, n_nonnull, null_type, equation, response_type, sigma_y, extra_meta=None):
-    """Assemble a DGP's meta dict.
-
-    null_type -- dict mapping each x_j's feature name to its null_type list.
-    """
+    """ Create a metadata dictionary summarizing a dataset."""
     full_null_type = dict(null_type)
     full_null_type.update({fname: _full_null() for fname in feature_names[n_nonnull:]})
     return {
@@ -202,24 +241,28 @@ def linear_additive(n, rng, cfg):
 
 @register("parity")
 def parity(n, rng, cfg):
-    """E[Y|x] = -gamma * prod(sign(x_j)), x_j ~ U[-1,1].
+    """E[Y|x] = -gamma * sum over groups of prod(sign(x_j)), x_j ~ U[-1,1].
 
-    Signal columns are marginally but not functionally null: E[Y|x_j] doesn't
-    depend on sign(x_j), because the product of the *other* signs is itself
-    symmetric ±1 regardless of x_j's sign (it's 0.5 for classification, 0 for
-    regression).
+    The signal features here are marginally but not conditionally known. When
+    `group_size` is set to 2, then this becomes the XOR function (example 3.1).
     """
+    # define data
     n_nonnull, n_features, _ = _dim(cfg)
     signal = [rng.uniform(-1.0, 1.0, size=n) for _ in range(n_nonnull)]
-
     noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "parity", signal)
     feature_names = _make_feature_names(n_nonnull, n_features)
+
+    # annotate
     null_type = {f"x{j + 1}": ["marginal"] for j in range(n_nonnull)}
+    group_size = cfg.get("group_size", 2)
     meta = _build_meta(
         feature_names, n_nonnull, null_type,
-        equation=f"E[Y|x] = -gamma * prod(sign(x_1), ..., sign(x_{n_nonnull})), x_j in U[-1,1]",
+        equation=(
+            f"E[Y|x] = -gamma * sum of prod(sign(x_j)) over groups of "
+            f"{group_size}, x_j in U[-1,1]"
+        ),
         response_type=response_type, sigma_y=sigma_y,
-        extra_meta={"gamma": cfg.get("gamma", 3.0)},
+        extra_meta={"gamma": cfg.get("gamma", 3.0), "group_size": group_size},
     )
     return _make_df(signal + noise, feature_names), y, feature_names, meta
 
@@ -228,21 +271,19 @@ def parity(n, rng, cfg):
 def product_interaction(n, rng, cfg):
     """E[Y|x] = gamma·sum_k(x_{2k-1}·x_{2k}), x_i ~ N(0,1).
 
-    n_nonnull must be even. Each feature is marginally null, but the pairs are
-    jointly non-null.
+    Even though the response is uncorrelated with each feature, we consider this
+    marginally nonull because the V(Y | X_j) is related to X_j. So, I(X_j; Y)
+    \neq 0.
     """
+    # define data
     n_nonnull, n_features, _ = _dim(cfg)
-    if n_nonnull % 2 != 0:
-        raise ValueError(
-            f"product_interaction requires even n_nonnull (nonoverlapping pairs); "
-            f"got n_nonnull={n_nonnull}."
-        )
     n_pairs = n_nonnull // 2
     signal = [rng.standard_normal(n) for _ in range(n_nonnull)]
-
     noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "product_interaction", signal)
     feature_names = _make_feature_names(n_nonnull, n_features)
-    null_type = {f"x{j + 1}": ["marginal"] for j in range(n_nonnull)}
+
+    # annotate
+    null_type = {f"x{j + 1}": [] for j in range(n_nonnull)}
     meta = _build_meta(
         feature_names, n_nonnull, null_type,
         equation=f"E[Y|x] = gamma * sum_{{k=1}}^{{{n_pairs}}} x_{{2k-1}} * x_{{2k}}",
@@ -261,28 +302,18 @@ def dependent_features(n, rng, cfg):
     the marginal one (they correlate with their anchor).
     """
     n_nonnull, n_features, _ = _dim(cfg)
-    if n_nonnull % 2 != 0:
-        raise ValueError(
-            f"dependent_features requires even n_nonnull (anchor+proxy groups); "
-            f"got n_nonnull={n_nonnull}."
-        )
     n_groups = n_nonnull // 2
     noise_scale = cfg.get("noise_scale", 0.3)
 
-    # define the true signals and correlated dependents
-    signal, latents = [], []
-    for _ in range(n_groups):
-        z = rng.standard_normal(n)
-        latents.append(z)
-        signal.append(z)  # anchor
-        signal.append(z + noise_scale * rng.standard_normal(n))  # proxy
+    # Define the true signals and correlated dependents.
+    signal, latents = _build_latent_pairs(
+        n, n_groups, rng, noise_scale
+    )
 
     noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "dependent_features", latents)
     feature_names = _make_feature_names(n_nonnull, n_features)
     proxy_null = ["conditional", "risk", "functional", "causal"]
-    null_type = {}
-    for j in range(n_nonnull):
-        null_type[f"x{j + 1}"] = [] if j % 2 == 0 else list(proxy_null)
+    null_type = _pair_null_type(n_nonnull, [], proxy_null)
     meta = _build_meta(
         feature_names, n_nonnull, null_type,
         equation="E[Y|z] = gamma * sum(z_j), x_{2j-1}=z_j, x_{2j}=z_j+eps",
@@ -341,18 +372,17 @@ def quadratic(n, rng, cfg):
 
     Signal features have zero marginal covariance with the response, Cov(x_j,
     y)=0, because (x_j) is symmetric about zero and the noise is independent.
-    However, the response depends on these features through x_j^2, so they are
-    relevant from functional, conditional, and causal views. This example comes
-    from Zheng and Raskutti ("Comparing Model-agnostic Feature Selection Methods
-    through Relative Efficiency",Example 2.1.1). The "-1" recenters x_j^2 (whose
-    mean is 1) so the logit is zero-mean like the other DGPs.
+    Still marginally non-null despite the lack of correlation. Also considered
+    functional, conditional, risk, and causal non-marginal, see Zheng and
+    Raskutti ("Comparing Model-agnostic Feature Selection Methods through
+    Relative Efficiency", Example 2.1.1)
     """
     n_nonnull, n_features, _ = _dim(cfg)
     signal = [rng.standard_normal(n) for _ in range(n_nonnull)]
-
     noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "quadratic", signal)
+
     feature_names = _make_feature_names(n_nonnull, n_features)
-    null_type = {f"x{j + 1}": ["marginal"] for j in range(n_nonnull)}
+    null_type = {f"x{j + 1}": [] for j in range(n_nonnull)}
     meta = _build_meta(
         feature_names, n_nonnull, null_type,
         equation=f"E[Y|x] = gamma * sum(x_1^2 - 1, ..., x_{n_nonnull}^2 - 1)",
@@ -384,5 +414,139 @@ def confounding(n, rng, cfg):
         equation="E[Y|z] = gamma * sum(z_j), x_j = z_j + eps (z_j unmeasured)",
         response_type=response_type, sigma_y=sigma_y,
         extra_meta={"gamma": cfg.get("gamma", 3.0), "noise_scale": noise_scale},
+    )
+    return _make_df(signal + noise, feature_names), y, feature_names, meta
+
+
+@register("redundant_pair")
+def redundant_pair(n, rng, cfg):
+    """Conditional and risk null without functional null (Example 3.3).
+
+    This is very similar to the dependent features generator, except the
+    features have lower noise by default. We added a little bit of noise because
+    otherwise the knockoff and GCM methods crash with numerical issues.
+    """
+    # Simulate the data
+    n_nonnull, n_features, _ = _dim(cfg)
+    n_groups = n_nonnull // 2
+    duplicate_noise = cfg.get("duplicate_noise", 0.0)
+    feature_dist = cfg.get("feature_dist", "normal")
+    signal, latents = _build_latent_pairs(n, n_groups, rng, duplicate_noise, feature_dist)
+    noise, y, response_type, sigma_y = _simulate_response(n, rng, cfg, "redundant_pair", latents)
+
+    # Annotation
+    feature_names = _make_feature_names(n_nonnull, n_features)
+    null_type = _pair_null_type(
+        n_nonnull,
+        ["conditional", "risk"] if duplicate_noise == 0.0 else [],
+        ["conditional", "risk", "causal"],
+    )
+    meta = _build_meta(
+        feature_names, n_nonnull, null_type,
+        equation=(
+            "E[Y|z] = gamma * sum(z_k), x_{2k-1} = z_k, x_{2k} = z_k + tau*eps"
+        ),
+        response_type=response_type, sigma_y=sigma_y,
+        extra_meta={
+            "gamma": cfg.get("gamma", 3.0),
+            "duplicate_noise": duplicate_noise,
+            "feature_dist": feature_dist,
+            "n_groups": n_groups,
+        },
+    )
+    return _make_df(signal + noise, feature_names), y, feature_names, meta
+
+
+@register("bayes_incomplete")
+def bayes_incomplete(n, rng, cfg):
+    """Conditional and functional but not risk null (see Example 3.4). """
+    n_nonnull, n_features, _ = _dim(cfg)
+    n_groups = n_nonnull // 2
+    proxy_noise = cfg.get("proxy_noise", 0.05)
+
+    # Generate latent u_k and pairs (u_k, u_k^2 + eps)
+    anchors = [rng.uniform(-1.0, 1.0, size=n) for _ in range(n_groups)]
+    signal = [
+        feature for u in anchors
+        for feature in (u, u**2 + proxy_noise * rng.standard_normal(n))
+    ]
+
+    # Define the response E[Y | u]
+    noise, y, response_type, sigma_y = _simulate_response(
+        n, rng, cfg, "bayes_incomplete", anchors
+    )
+
+    # Annotations
+    feature_names = _make_feature_names(n_nonnull, n_features)
+    null_type = _pair_null_type(
+        n_nonnull,
+        anchor_null=[],
+        proxy_null=["conditional", "functional", "causal"],
+    )
+    meta = _build_meta(
+        feature_names, n_nonnull, null_type,
+        equation=(
+            "E[Y|u] = gamma * sum(u_k^2 - 1/3), x_{2k-1} = u_k ~ U[-1,1], "
+            "x_{2k} = u_k^2 + eps"
+        ),
+        response_type=response_type, sigma_y=sigma_y,
+        extra_meta={
+            "gamma": cfg.get("gamma", 3.0),
+            "proxy_noise": proxy_noise,
+            "n_groups": n_groups,
+        },
+    )
+    return _make_df(signal + noise, feature_names), y, feature_names, meta
+
+
+@register("heteroscedastic")
+def heteroscedastic(n, rng, cfg):
+    """Risk and functional but not conditional null.
+
+    The even features are related to the variance. The odd features are related
+    to the mean. Those which are related only to the variance are risk and
+    functional nulls, but they're not conditionally null because there is shared
+    information across those features and y.
+    """
+    n_nonnull, n_features, _ = _dim(cfg)
+    n_groups = n_nonnull // 2
+    variance_scale = cfg.get("variance_scale", 1.0)
+
+    # Generate the mean and variance features.
+    signal, means, variances = [], [], []
+    for _ in range(n_groups):
+        m = rng.standard_normal(n)
+        v = rng.standard_normal(n)
+        means.append(m)
+        variances.append(v)
+        signal.append(m)
+        signal.append(v)
+
+    # Keeps the noise scale comparable across different group sizes.
+    scale = np.exp(0.5 * variance_scale * sum(variances) / np.sqrt(n_groups))
+    noise, y, response_type, sigma_y = _simulate_response(
+        n, rng, cfg, "heteroscedastic", means, scale=scale
+    )
+
+    # Record the annotation.
+    feature_names = _make_feature_names(n_nonnull, n_features)
+    variance_null = ["risk", "functional"]
+    null_type = {
+        f"x{j + 1}": ([] if j % 2 == 0 else list(variance_null))
+        for j in range(n_nonnull)
+    }
+
+    meta = _build_meta(
+        feature_names, n_nonnull, null_type,
+        equation=(
+            "E[Y|x] = gamma * sum(x_{2k-1}); "
+            "sd(Y|x) = sigma_y * exp(kappa * sum(x_{2k}) / (2 sqrt(n_groups)))"
+        ),
+        response_type=response_type, sigma_y=sigma_y,
+        extra_meta={
+            "gamma": cfg.get("gamma", 3.0),
+            "variance_scale": variance_scale,
+            "n_groups": n_groups,
+        },
     )
     return _make_df(signal + noise, feature_names), y, feature_names, meta
