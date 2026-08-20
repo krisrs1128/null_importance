@@ -27,7 +27,7 @@ sys.path.insert(0, str(_script_dir.parent / "src"))
 sys.path.insert(0, str(_script_dir.parents[1] / "src"))
 from evaluation import (  # noqa: E402
     BLOCK_KEYS, call_nonnull, confusion, empirical_table, error_rates,
-    load_scores, pool,
+    load_scores, null_mass, pool,
 )
 
 
@@ -62,14 +62,20 @@ def main(cfg: DictConfig):
     write(truth, out_dir, "null_truth.csv")
     write(coarse_null_label(truth), out_dir, "null_labels.csv")
 
-    # Apply the decision rule used to call features null or nonnull
+    # The decision rule used to call features null or nonnull. The methods below
+    # ("zeroreference_methods") are compared with 0 -- anything larger than zero
+    # is considered nonnull.
     scores = load_scores(results_dir, methods)
-    labeled = call_nonnull(scores, truth, alpha=eval_cfg["alpha"])
+    labeled = call_nonnull(
+        scores, truth, alpha=eval_cfg["alpha"],
+        zero_reference_methods=eval_cfg.get("zero_reference_methods", []),
+    )
     write(labeled, out_dir, "scores_long.csv")
 
-    # compute error rates
+    # compute error rates, and the threshold-free companion to them
     counts = confusion(labeled, truth, BLOCK_KEYS)
     write(counts, out_dir, "confusion.csv")
+    write(null_mass(labeled, truth), out_dir, "null_mass.csv")
     per_seed = error_rates(counts)
     pooled = error_rates(pool(counts, over=("seed",)))
     write(per_seed, out_dir, "error_rates.csv")
