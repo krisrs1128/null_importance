@@ -75,25 +75,15 @@ theoretical_rows:
   loco: loco
   mdi: mdi
 
-# Turning importance scores into null-importance test results. A feature is
-# called non-null when its score beats the iid pads in the same block at level
-# `alpha`. Pads are null under every notion, so they are a reference the
-# methods' differing scales cannot distort; `alphas` lists the attainable
-# levels k/13 for the precision-recall sweep.
-
-
-# Some hyperparameters When running and visualizing the experiments. We
-# calibrate the null importance rejection threshold using alpha and the fully
-# noise features.
-#
-# Vance defines the thresholds used to define tilde versus checkmark in our table 1 analog.
+# Hyperparameters for turning the important statistics into yes/no decisions
+# about whether a variable is important
 evaluation:
   alpha: 0.1
-  alphas: [0.08, 0.16, 0.24, 0.31, 0.39, 0.47, 0.54, 0.62, 0.70, 0.77, 0.85, 0.93, 1.0]
   pool_seeds: true
   power_target: 0.5   # power considered non-trivial
   bands: [0.4, 0.8]
   response_type: regression
+  zero_reference_methods: [minshap]
 
 # Here is a machine-readable summary of the counterexamples listed in the paper,
 # and which this simulation sweep attempts to formalie
@@ -234,11 +224,6 @@ risk:
     max_depth: 3
   linear_params:
     alpha: 1.0
-
-# This tells loco to actually refit a model rather than simply using out-of-bag
-# errors
-loco:
-  estimator: risk_class
 
 # Forest fitted on the data for the methods in FITTED_MODEL_METHODS.
 surrogate:
