@@ -12,6 +12,21 @@ fig-width: 11
 fig-height: 7
 ---
 
+These are the dataset IDs used throughout.
+
+| ID | Config name | Table 2 category | Paper example | Title |
+|-----|----------------------|----------------------------------------|------------------------------|----------------------------------------------------------------------------------------------------------|
+| D1 | linear_additive | Additive / Linear | -- | -- |
+| D2 | quadratic | Additive / Quadratic | -- | -- |
+| D3 | product_interaction | Interactions | -- | -- |
+| D4 | parity | Interactions | Example 3.1 | Marginal null does not imply conditional null |
+| D5 | dependent_features | Structural causal | -- | -- |
+| D6 | confounding | Structural causal | -- | --|
+| D7 | mediated_chains | Structural causal | Example 3.5, Example 4.1 | Causal importance without conditional statistical importance; Chain DAG counterexample (risk-based Shapley credits an indirect chain contribution) |
+| D8 | redundant_pair | Structural causal | Example 3.3, Example 4.2 | Conditional statistical null without functional null; MDI fails to respect conditional null importance |
+| D9 | bayes_incomplete | Additive / Quadratic | Example 3.4 | Failure of Bayes-completeness |
+| D10 | heteroscedastic | Structural causal | Lemma 2 | Risk-based and conditional null relationship |
+
 ```{r setup, include=FALSE}
 library(fs)
 library(glue)
@@ -33,7 +48,8 @@ theme_set(theme_axiomatic(base_size = 12))
 ```
 
 ```{r}
-ev <- load_evaluation(evaluation_dir)
+response_type <- cfg$evaluation$response_type
+ev <- load_evaluation(evaluation_dir) |> filter_response_type(response_type)
 theoretical <- load_theoretical_table(
     base / "table1_theoretical.csv", cfg$theoretical_rows
 )
@@ -48,43 +64,84 @@ save_fig <- function(plot, name, width = 11, height = 7) {
 - a **type I error** calls a null feature relevant;
 - a **type II error** misses a relevant feature.
 
+ It's not entirely clear how to define the  rejection regions for each of the
+ methods. So far, for minSHAP, we reject whenever we have a minSHAP score above
+ 0. For the other methods, we use the noise features that we deliberately
+ introduced to define the decision boundary. However, in reality, these noise
+ variables might not be available for calibration. The rates for those methods
+ reflect a kind of best-case decision strategy.
+
+## How do null importance criteria compare?
+
+ We look at how many features are considered null versus non-null according to
+ each notion of null importance, across all datasets considered in the
+ benchmark.
+
+```{r notion-separation}
+#| fig-width: 6
+#| fig-height: 5
+notion_separation_panel(ev$truth) |>
+    save_fig("fig_notion_separation.svg", width = 8, height = 6)
+```
+
+Notice that the power can depend a lot on sample size.
+
 ```{r confusion-conditional}
-confusion_panel(ev$confusion, "conditional") |>
-    save_fig("fig_confusion_conditional.svg", height = 8)
+walk(cfg$sample_sizes, \(sample_size) {
+    confusion_panel(ev$confusion, "conditional", sample_size = sample_size) |>
+        save_fig(glue("fig_confusion_conditional_n{sample_size}.svg"), height = 9) |>
+        print()
+})
 ```
 
 ```{r confusion-causal}
-confusion_panel(ev$confusion, "causal") |>
-    save_fig("fig_confusion_causal.svg", height = 8)
+walk(cfg$sample_sizes, \(sample_size) {
+    confusion_panel(ev$confusion, "causal", sample_size = sample_size) |>
+        save_fig(glue("fig_confusion_causal_n{sample_size}.svg"), height = 9) |>
+        print()
+})
 ```
 
-## Error rates
+## Mass placed on null features
 
-```{r fpr}
-error_rate_heatmap(ev$pooled, "fpr", midpoint = cfg$evaluation$alpha) |>
-    save_fig("fig_type1_error.svg", height = 6)
+Next we evaluate $\frac{\sum_{j \in \text{Null}}\left|\varphi_{j}\right|}{\sum_{j} \left|\varphi_{j}\right|}$. This can depend on the types of null importance considered.
+
+```{r null-mass}
+#| fig-height: 6
+null_mass_panel(ev$null_mass, sample_size=500) |>
+    save_fig("fig_null_mass_n_500.svg", width = 12, height = 6)
+
+null_mass_panel(ev$null_mass, sample_size=5000) |>
+    save_fig("fig_null_mass_n_5000.svg", width = 12, height = 6)
 ```
 
-```{r power}
-error_rate_heatmap(ev$pooled, "power", midpoint = cfg$evaluation$power_target) |>
-    save_fig("fig_power.svg", height = 6)
+D7 nicely highlights the difference between SAGE and minSHAP.
+
+```{r null-mass-d7}
+ev$null_mass |>
+    filter(
+        dataset_id == "D7", notion == "risk",
+        n == max(unlist(cfg$sample_sizes))
+    ) |>
+    summarise(
+        across(c(null_magnitude, nonnull_magnitude), mean),
+        .by = method
+    ) |>
+    mutate(null_mass = null_magnitude / (null_magnitude + nonnull_magnitude)) |>
+    arrange(null_mass) |>
+    knitr::kable(digits = 3)
 ```
 
-## Dependence on the threshold
-
-```{r pr-curves}
-pr_curve_panel(ev$sweep, "conditional") |>
-    save_fig("fig_pr_conditional.svg", height = 6)
-```
-
-```{r roc}
-roc_panel(ev$curves) |>
-    save_fig("fig_roc_auc.svg", height = 6)
-```
+## Dependence on the level
 
 ```{r table1}
-table1_comparison_plot(ev$table1) |>
-    save_fig("fig_table1_empirical.svg", width = 8, height = 6)
+#| fig-width: 14
+#| fig-height: 6
+walk(cfg$sample_sizes, \(sample_size) {
+    table1_comparison_combined(ev$table1_by_n, sample_size = sample_size) |>
+        save_fig(glue("fig_table1_empirical_n{sample_size}.svg"), width = 14, height = 6) |>
+        print()
+})
 ```
 
 ```{r table1-numbers}
@@ -96,3 +153,35 @@ ev$table1 |>
     arrange(method, notion) |>
     knitr::kable(digits = 2)
 ```
+
+## Theory against the sweep
+
+```{r theory-vs-empirical}
+theory_vs_empirical_panel(ev$table1, theoretical) |>
+    save_fig("fig_theory_vs_empirical.svg", width = 9, height = 6)
+```
+
+## Summarizing paper $\iff$ code connections
+
+This summarizes the data sets that we generate and compares it to the examples
+from the paper draft.  We also summarize whether the empirical results are
+consistent with the theory. There is some randomness involved in flagging a
+feature as null/nonnull, and we heuristically gave some slack to tolerate
+some departures on a fraction of datasets/features.
+
+```{r counterexamples}
+active_examples <- keep(
+    cfg$counterexamples,
+    \(entry) entry$dataset %in% ev$scores$dataset
+)
+ledger <- counterexample_ledger(ev$scores, active_examples)
+
+ledger |>
+    mutate(holds = if_else(holds, "yes", "no")) |>
+    knitr::kable(digits = 2)
+```
+
+## Limitations
+
+- We haven't evaluated `causal_shapley` so no method correctly flags causal nulls in D6 and D9
+- We only considered D4 to be marginal nulls. In D2 and D3, the features are uncorrelated with the response, but not actually independent
