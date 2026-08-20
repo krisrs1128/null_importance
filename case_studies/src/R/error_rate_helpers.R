@@ -347,32 +347,37 @@ null_mass_panel <- function(null_mass, sample_size = NULL) {
             .by = c(method, notion, dataset_id, n)
         ) |>
         mutate(
-            null_mass = null_magnitude / (null_magnitude + nonnull_magnitude)
-        ) |>
-        filter(is.finite(null_mass))
+            null_mass = null_magnitude / (null_magnitude + nonnull_magnitude),
+            null_mass = if_else(is.finite(null_mass), null_mass, NA_real_)
+        )
 
     # sort methods from best to worst
     method_order <- cells |>
-        summarise(overall = mean(null_mass), .by = method) |>
+        summarise(overall = mean(null_mass, na.rm = TRUE), .by = method) |>
         arrange(desc(overall)) |>
         pull(method)
     cells <- mutate(cells, method = factor(method, levels = method_order))
 
     # visualize
     title_n <- if (is.null(sample_size)) "" else glue(" [n = {sample_size}]")
-    ggplot(cells, aes(method, reorder(dataset_id, null_mass))) +
+    ggplot(cells, aes(method, reorder(dataset_id, null_mass, na.rm = TRUE))) +
         geom_vline(
             xintercept = 0.5, linetype = "dashed", color = axiom_palette$grid
         ) +
         geom_tile(aes(fill = null_mass), size = 2, alpha = 0.85) +
         facet_wrap(~notion) +
-        scale_color_scico(palette = "berlin") +
+        scale_fill_scico(
+            palette = "berlin", midpoint = 0.2, na.value = axiom_palette$grid
+        ) +
         labs(
-            color = "fraction of |phi| mass on null features",
+            fill = "fraction of |phi| mass on null features",
             y = NULL, x = NULL,
             title = glue("Mass placed on null features{title_n}")
         ) +
-        theme(panel.grid.major.y = element_blank())
+        theme(
+            panel.grid.major.y = element_blank(),
+            axis.text.x = element_text(angle = 90, hjust = 0)
+        )
 }
 
 #' Compare the transcribed Table 1 with what the sweep observed.
