@@ -8,9 +8,24 @@ library(here)
 library(scico)
 library(FactoMineR)
 library(fs)
+library(yaml)
 
-#' Fixed feature order to use across synthetic datasets
-FEATURE_ORDER <- c(paste0("x", 1:6), paste0("noise_", 1:6))
+#' Vector giving the feature orders (signal then noise features)
+#'
+#' This is all read from the configuration file.
+#'
+#' @param config_path sweep_tabular's config.yaml
+sweep_feature_order <- function(
+    config_path = path(here("case_studies", "sweep_tabular"), "config.yaml")
+) {
+    dimensions <- yaml::read_yaml(config_path)$dimensions
+    c(
+        paste0("x", seq_len(dimensions$n_nonnull)),
+        paste0("noise_", seq_len(dimensions$n_features - dimensions$n_nonnull))
+    )
+}
+
+FEATURE_ORDER <- sweep_feature_order()
 
 #' Labels to describe what type of null each variable encodes
 #'
