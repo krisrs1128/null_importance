@@ -34,9 +34,6 @@ kernelshap:
   n_coalitions: 100
   n_background: 100
 
-loco:
-  top_k: 100
-
 pdp:
   grid_resolution: 20
 

@@ -1,23 +1,37 @@
 """Evaluate importance scores as tests of null importance.
 
-The null-importance framework (Definitions 2.2--2.9) are defined at the
-population level.  Definitions 4.1 and 4.2 ask whether an importance statistic
-respects ``phi_j = 0 => N_j``. We test this through simulations.
+The null-importance framework (Definitions 2.2--2.9) defines population level
+importance statistics ``phi_j`` and articulate differents kinds of null
+importance hypotheses that these statistics might be sensitive to.
 
     H0(j, notion): feature j is null under `notion`
-    reject:        the method's score for j exceeds a fraction `threshold` of
-                   the largest score in its block
+    reject:        the method's score for j is too large to be null, judged
+                   against the reference its statistic admits
 
 A false positive is a null feature called relevant (type I error). A false
 negative is a missed relevant feature (type II error).
+
+For many of these statistics, it's not entirely clear what decision threshold to
+be using. We've considered two strategies.
+
+:func:`zero_reference_calls` - This rejects if the null importance statistic is
+    larger than zero. It's the most reliable strategy and doesn't require any
+    external knowledge. However, we have so far only applied it to minSHAP.
+
+:func:`pad_pvalues` - This rejects if the important statistics are above a
+    quantile of the statistics observed in the noise features. This requires
+    external knowledge about which features are known not to be related to the
+    response.  This is our default strategy for most methods.
+
+We also write :func:`null_mass` It measures the proportion of importance that
+goes to the null features. This can be computed without a threshold and is a
+simple diagnostic that doesn't require the two-by-two table decisions.
 """
 
 import logging
 import re
-
 import numpy as np
 import pandas as pd
-from sklearn.metrics import average_precision_score, roc_auc_score
 
 log = logging.getLogger(__name__)
 
@@ -79,43 +93,86 @@ def load_scores(results_dir, methods):
 # Decision rule
 # ---------------------------------------------------------------------------
 
-def normalize_scores(importance):
-    """Map scores to ``[0, 1]``, treating zero as no evidence of relevance.
+def pad_pvalues(importance, is_pad):
+    """One-sided p-values against the pad scores in the same block.
 
-    Negative scores count as evidence against relevance: examples include a
-    knockoff statistic favouring the knockoff copy and a minSHAP contribution
-    for which adding the feature raises risk. They are clipped at zero.
+    Args:
+        importance: Scores for one block, in feature order.
+        is_pad: Boolean mask marking the iid noise features.
+
+    Returns:
+        Array of p-values. The smallest attainable value is
+        ``1 / (1 + n_pads)``, so ``alpha`` below that rejects nothing.
     """
-    clipped = np.clip(np.asarray(importance, dtype=float), 0.0, None)
-    largest = clipped.max() if clipped.size else 0.0
-    if not np.isfinite(largest) or largest <= 0.0:
-        return np.zeros_like(clipped)
-    return clipped / largest
+    importance = np.asarray(importance, dtype=float)
+    importance = np.where(np.isfinite(importance), importance, -np.inf)
+    pads = importance[np.asarray(is_pad, dtype=bool)]
+    if pads.size == 0:
+        raise ValueError("a block with no pad features has no null reference")
+
+    exceed = (pads[None, :] >= importance[:, None]).sum(axis=1)
+    return (1.0 + exceed) / (1.0 + pads.size)
 
 
-def call_nonnull(scores, threshold=0.1, block_keys=BLOCK_KEYS):
-    """Add normalized scores and non-null calls within each block.
+def zero_reference_calls(importance):
+    """Detect nonnull features for statistics assumed to be zero under the null
 
-    A feature is called non-null when its normalized score exceeds
-    ``threshold``. With infinite data, we would force threshold = 0 to declare a
-    feature nonnull.
+    For methods like a minSHAP, we can reject if the importance is above zero.
+    """
+    return np.asarray(importance, dtype=float) > 0
+
+
+def call_nonnull(scores, truth, alpha=0.1, block_keys=BLOCK_KEYS,
+                 zero_reference_methods=()):
+    """Decide whether a feature is nonnull
+
+    A block includes all features from a single combination of:
+        - One dataset (e.g., "linear_additive", "parity")
+        - One sample size (n)
+        - One response type (classification or regression)
+        - One random seed
+        - One method (e.g., "minshap", "sage", "knockoffs")
+
+    We refer only to the features within this block when flagging features as
+    null or non-null (we might refer to the other features in the same block if
+    we're calibrating using noise features like in func::`pad_pvalues`, for
+    example. )
 
     Args:
         scores: Frame returned by :func:`load_scores`.
-        threshold: Fraction of the block maximum above which to reject.
+        truth: Long ground-truth frame; supplies ``null_kind``, which marks the
+            pads.
+        alpha: Level at which to reject, for the pad-referenced methods.
         block_keys: Columns defining one comparable set of scores.
+        zero_reference_methods: Methods whose statistic is zero under the null.
+          Uses a simpler rejection rule but doesn't return p-values.
 
     Returns:
-        A copy of ``scores`` with float column ``normalized`` and Boolean
-        column ``called_nonnull``.
+        A copy of ``scores`` with float column ``p_value``, Boolean column
+        ``called_nonnull``, and string column ``calibration`` recording which
+        reference produced the call.
     """
-    out = scores.copy()
-    out["normalized"] = np.nan
+    # initialize results
+    kinds = truth[["dataset", "feature", "null_kind"]].drop_duplicates()
+    out = scores.merge(kinds, on=["dataset", "feature"], how="left")
+
+    zero_reference_methods = set(zero_reference_methods)
+    out["p_value"] = np.nan
+    out["called_nonnull"] = False
+    out["calibration"] = "pad"
+
+    # call both zero reference and padding approaches
     for _, block in out.groupby(block_keys, sort=False):
-        out.loc[block.index, "normalized"] = normalize_scores(
-            block["importance"].values
-        )
-    out["called_nonnull"] = out["normalized"] > threshold
+        if block["method"].iat[0] in zero_reference_methods:
+            calls = zero_reference_calls(block["importance"].values)
+            out.loc[block.index, "calibration"] = "zero"
+        else:
+            p_value = pad_pvalues(
+                block["importance"].values, block["null_kind"].values == "pad"
+            )
+            out.loc[block.index, "p_value"] = p_value
+            calls = p_value <= alpha
+        out.loc[block.index, "called_nonnull"] = calls
     return out
 
 
@@ -123,40 +180,25 @@ def call_nonnull(scores, threshold=0.1, block_keys=BLOCK_KEYS):
 # 2x2 tables and error rates
 # ---------------------------------------------------------------------------
 
-def _scope(labeled, null_scope):
-    """Keep either all features or only the structural signal features.
-
-    Random noise "pads" are null under every notion and easy to classify.
-    Pooling them with structural nulls (e.g., conditional null features) makes
-    methods look better than they are. ``null_scope="signal"`` removes pads.
-    """
-    if null_scope == "all":
-        return labeled
-    if null_scope == "signal":
-        return labeled[labeled["null_kind"] != "pad"]
-    raise ValueError(f"null_scope must be 'all' or 'signal'; got {null_scope!r}")
-
-
-def confusion(labeled, truth, group_keys=BLOCK_KEYS, null_scope="all"):
+def confusion(labeled, truth, group_keys=BLOCK_KEYS):
     """Compare calls with the ground truth for each notion.
 
-    The null hypothesis is that feature ``j`` is null under the notion.
-    Rejecting it means calling the feature non-null; therefore ``fp`` is the
-    type I count and ``fn`` is the type II count.
+    The null hypothesis is that feature ``j`` is null under the notion.  ``fp``
+    is the type I error and ``fn`` is the type II error.
 
     Args:
         labeled: Output of :func:`call_nonnull`.
         truth: Long ground-truth frame with ``dataset``, ``feature``,
             ``notion``, ``is_null``, and ``null_kind``.
         group_keys: Columns defining each table, in addition to ``notion``.
-        null_scope: ``"all"`` or ``"signal"``; see :func:`_scope`.
 
     Returns:
-        A frame with ``group_keys``, ``notion``, ``null_scope``, ``tn``, ``fp``,
-        ``fn``, ``tp``, ``n_null``, and ``n_nonnull``.
+        A frame with ``group_keys``, ``notion``, ``tn``, ``fp``, ``fn``,
+        ``tp``, ``n_null``, and ``n_nonnull``.
     """
-    joined = labeled.merge(truth, on=["dataset", "feature"], how="inner")
-    joined = _scope(joined, null_scope)
+    joined = labeled.drop(columns="null_kind", errors="ignore").merge(
+        truth, on=["dataset", "feature"], how="inner"
+    )
 
     joined["tp"] = ~joined["is_null"] & joined["called_nonnull"]
     joined["fn"] = ~joined["is_null"] & ~joined["called_nonnull"]
@@ -168,9 +210,7 @@ def confusion(labeled, truth, group_keys=BLOCK_KEYS, null_scope="all"):
     counts = counts.reset_index()
     counts["n_null"] = counts["tn"] + counts["fp"]
     counts["n_nonnull"] = counts["tp"] + counts["fn"]
-    counts["null_scope"] = null_scope
-    return counts[keys + ["null_scope", "tn", "fp", "fn", "tp",
-                          "n_null", "n_nonnull"]]
+    return counts[keys + ["tn", "fp", "fn", "tp", "n_null", "n_nonnull"]]
 
 
 def _ratio(numerator, denominator):
@@ -194,6 +234,47 @@ def error_rates(counts):
     return out
 
 
+def null_mass(labeled, truth, group_keys=BLOCK_KEYS):
+    """What fraction of total variable importance is assigned to null features?
+
+    ``sum |phi| over null features / (sum |phi| over all features)
+    Zero means the method never assigns any importance to the null features, one
+    means it assigns all of its mass to them.  Notice that this can get
+    influenced by the total and original features in the dataset.
+
+    Args:
+        labeled: Output of :func:`call_nonnull`.
+        truth: Long ground-truth frame with ``dataset``, ``feature``,
+            ``notion``, ``is_null``, and ``null_kind``.
+        group_keys: Columns defining each proportion, in addition to
+            ``notion``.
+
+    Returns:
+        A frame with ``group_keys``, ``notion``, ``null_magnitude``,
+        ``nonnull_magnitude``, and their proportion ``null_mass``. Blocks with
+        no mass anywhere give NaN.
+    """
+    joined = labeled.drop(columns="null_kind", errors="ignore").merge(
+        truth, on=["dataset", "feature"], how="inner"
+    )
+    joined["magnitude"] = joined["importance"].abs()
+
+    keys = list(group_keys) + ["notion"]
+    sums = (
+        joined.groupby(keys + ["is_null"], sort=False)["magnitude"]
+        .sum()
+        .unstack("is_null")
+        .reindex(columns=[False, True])
+        .rename(columns={False: "nonnull_magnitude", True: "null_magnitude"})
+        .reset_index()
+    )
+    sums["null_mass"] = _ratio(
+        sums["null_magnitude"],
+        sums["null_magnitude"] + sums["nonnull_magnitude"],
+    )
+    return sums[keys + ["null_magnitude", "nonnull_magnitude", "null_mass"]]
+
+
 def pool(counts, over=("seed",)):
     """Sum 2x2 counts over ``over`` before calculating rates.
 
@@ -205,58 +286,13 @@ def pool(counts, over=("seed",)):
     return counts.groupby(keys, sort=False)[count_cols].sum().reset_index()
 
 
-def threshold_sweep(scores, truth, thresholds, group_keys=BLOCK_KEYS,
-                    null_scopes=("all", "signal")):
-    """Calculate error and classification rates at several thresholds."""
-    frames = []
-    for threshold in thresholds:
-        labeled = call_nonnull(scores, threshold=threshold,
-                               block_keys=group_keys)
-        for null_scope in null_scopes:
-            rates = error_rates(
-                confusion(labeled, truth, group_keys, null_scope)
-            )
-            rates["threshold"] = threshold
-            frames.append(rates)
-    return pd.concat(frames, ignore_index=True)
-
-
-def curve_summary(scores, truth, group_keys=BLOCK_KEYS,
-                  null_scopes=("all", "signal")):
-    """Summarise ROC AUC and average precision by block and notion.
-
-    This can be used to summarize method performance without thresholding.
-    """
-    joined = scores.merge(truth, on=["dataset", "feature"], how="inner")
-    keys = list(group_keys) + ["notion"]
-
-    rows = []
-    for null_scope in null_scopes:
-        scoped = _scope(joined, null_scope)
-        for key_values, block in scoped.groupby(keys, sort=False):
-            y_true = (~block["is_null"]).astype(int).values
-            y_score = block["importance"].values.astype(float)
-            if y_true.min() == y_true.max() or not np.isfinite(y_score).all():
-                roc, average_precision = np.nan, np.nan
-            else:
-                roc = roc_auc_score(y_true, y_score)
-                average_precision = average_precision_score(y_true, y_score)
-            rows.append({
-                **dict(zip(keys, key_values)),
-                "null_scope": null_scope,
-                "roc_auc": roc,
-                "average_precision": average_precision,
-            })
-    return pd.DataFrame(rows)
-
-
 # ---------------------------------------------------------------------------
 # Empirical version of Table 1
 # ---------------------------------------------------------------------------
 
 def empirical_table(rates, alpha=0.1, power_target=0.5, bands=(0.4, 0.8),
                     cell_keys=("dataset", "response_type", "n"),
-                    categories=None):
+                    categories=None, group_keys=("method", "notion")):
     """Reduce cell-level rates to one verdict per method and null type.
 
     Each ``(dataset, response_type, n)`` is a simulated cell. A method controls
@@ -274,26 +310,32 @@ def empirical_table(rates, alpha=0.1, power_target=0.5, bands=(0.4, 0.8),
     never rejects a feature would pass every null_type.
 
     Args:
-        rates: Output of :func:`error_rates`, for one ``null_scope``.
+        rates: Output of :func:`error_rates`.
         alpha: Target type I error rate.
         power_target: Minimum power counted as non-trivial.
         bands: Lower and upper control fractions.
         cell_keys: Columns identifying one simulated cell.
         categories: Optional mapping ``{method: [null_type, ...]}`` identifying
             each method's nominal target null_types.
+        group_keys: Columns identifying what to pool over.
 
     Returns:
-        A frame with the verdict, cell counts, fractions, mean rates, and
-        ``is_target_null_type`` for each method and null_type.
+        A frame with the cell counts, fractions, error rates, and
+        ``is_target_null_type`` for each method and null_type (and any extra
+        ``group_keys``).
     """
     low, high = bands
-    cell_keys = list(cell_keys)
+    group_keys = list(group_keys)
+    cell_keys = [key for key in cell_keys if key not in group_keys]
     rows = []
-    for (method, notion), group in rates.groupby(["method", "notion"], sort=False):
+    for group_values, group in rates.groupby(group_keys, sort=False):
+        if not isinstance(group_values, tuple):
+            group_values = (group_values,)
         cells = group.groupby(cell_keys, sort=False)[["fpr", "power"]].mean()
         defined_fpr = cells["fpr"].dropna()
         defined_power = cells["power"].dropna()
 
+        # Compare against false positive and negative thresholds.
         controlled = (
             float((defined_fpr <= alpha).mean()) if len(defined_fpr) else np.nan
         )
@@ -302,6 +344,7 @@ def empirical_table(rates, alpha=0.1, power_target=0.5, bands=(0.4, 0.8),
             if len(defined_power) else np.nan
         )
 
+        # Assign a symbol to the different categories
         if np.isnan(controlled) or controlled < low:
             symbol = "cross"
         elif controlled >= high and (np.isnan(powered) or powered >= high):
@@ -309,10 +352,11 @@ def empirical_table(rates, alpha=0.1, power_target=0.5, bands=(0.4, 0.8),
         else:
             symbol = "tilde"
 
-        target = notion in (categories or {}).get(method, [])
+        # Return summary statistics of the method and its overall assignment.
+        group_dict = dict(zip(group_keys, group_values))
+        target = group_dict["notion"] in (categories or {}).get(group_dict["method"], [])
         rows.append({
-            "method": method,
-            "notion": notion,
+            **group_dict,
             "n_cells": len(defined_fpr),
             "n_power_cells": len(defined_power),
             "controlled_fraction": controlled,

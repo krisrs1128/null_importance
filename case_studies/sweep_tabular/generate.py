@@ -15,7 +15,7 @@ from omegaconf import DictConfig, OmegaConf
 # Add case_studies/src to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from reproducibility import capture_run_metadata
-from datasets import DATASETS
+from datasets import DATASETS, dataset_response_types
 
 log = logging.getLogger(__name__)
 _script_dir = Path(__file__).resolve().parent
@@ -40,7 +40,7 @@ def main(cfg: DictConfig):
         rng = np.random.default_rng(seed)
         for name, fn in DATASETS.items():
             base_cfg = {**cfg_dict["dimensions"], **cfg_dict["datasets"][name]}
-            for rt in cfg.response_types:
+            for rt in dataset_response_types(cfg_dict, name):
                 dataset_cfg = {**base_cfg, "response_type": rt}
                 for n in cfg.sample_sizes:
                     X, y, _, meta = fn(n, rng, dataset_cfg)

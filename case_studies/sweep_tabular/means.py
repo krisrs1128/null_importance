@@ -23,11 +23,11 @@ def _scaled_sum(key, default, cols, cfg):
     return cfg.get(key, default) * sum(cols)
 
 
-# linear_additive, dependent_features, and confounding all share this
-# "coefficient * sum(cols)" mean; only the config key/default differ.
 MEAN_FNS["linear_additive"] = partial(_scaled_sum, "beta", 4.0)
 MEAN_FNS["dependent_features"] = partial(_scaled_sum, "gamma", 3.0)
 MEAN_FNS["confounding"] = partial(_scaled_sum, "gamma", 3.0)
+MEAN_FNS["redundant_pair"] = partial(_scaled_sum, "gamma", 3.0)
+MEAN_FNS["heteroscedastic"] = partial(_scaled_sum, "gamma", 3.0)
 
 
 def chain_terminal_indices(n_nonnull, chain_length):
@@ -49,11 +49,15 @@ def mean_mediated_chains(cols, cfg):
 
 @register_mean("parity")
 def mean_parity(cols, cfg):
-    """mean = -gamma * prod(sign(c) for c in cols)."""
+    """mean = -gamma * sum over groups of prod(sign(c)) within the group."""
     gamma = cfg.get("gamma", 3.0)
+    group_size = cfg.get("group_size", 2)
     signs = [np.sign(c) for c in cols]
-    product_of_signs = np.prod(signs, axis=0)
-    return -gamma * product_of_signs
+    groups = [
+        signs[start:start + group_size]
+        for start in range(0, len(signs), group_size)
+    ]
+    return -gamma * sum(np.prod(group, axis=0) for group in groups)
 
 
 @register_mean("product_interaction")
@@ -72,3 +76,13 @@ def mean_quadratic(cols, cfg):
     """
     gamma = cfg.get("gamma", 3.0)
     return gamma * sum(c**2 - 1 for c in cols)
+
+
+@register_mean("bayes_incomplete")
+def mean_bayes_incomplete(cols, cfg):
+    """mean = gamma * sum(c**2 - 1/3 for c in cols).
+
+    We're centering by E[c**2]=1/3 (c ~ U[-1,1]). This follows Example 3.4.
+    """
+    gamma = cfg.get("gamma", 3.0)
+    return gamma * sum(c**2 - 1 / 3 for c in cols)

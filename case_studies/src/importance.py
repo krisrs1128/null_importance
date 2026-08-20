@@ -1,7 +1,6 @@
 """Consistent interface to feature importance methods."""
 
 import logging
-
 import numpy as np
 import pandas as pd
 import shap
@@ -9,8 +8,11 @@ import knockpy
 from rf import fit_final
 from axiom_interp import presets
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LassoCV, LogisticRegressionCV, Ridge
 from sklearn.metrics import matthews_corrcoef as mcc_score
 from sklearn.inspection import permutation_importance as pi
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from scipy.stats import pointbiserialr, pearsonr, norm as _norm
 from sklearn.inspection import partial_dependence as pd_func
 import xgboost as xgb
@@ -18,6 +20,11 @@ import xgboost as xgb
 log = logging.getLogger(__name__)
 
 METHODS = {}
+
+# Most of our explanations are based off of a known data generating process mean
+# function. These two, however, require an actual fitted estimator because they
+# depend on the structure of the model.
+FITTED_MODEL_METHODS = {"mdi", "treeshap"}
 
 
 def register(name):
@@ -54,31 +61,49 @@ def treeshap(model, X, feature_names):
 
 
 @register("loco")
-def loco(X_df, y, feature_names, model, cfg, seed):
-    baseline_pred = model.classes_[model.oob_decision_function_.argmax(axis=1)]
-    full_mcc = mcc_score(y, baseline_pred)
+def loco(X_df, y, feature_names, model, cfg, seed, rng):
+    """Leave one covariate out explanations
 
-    mdi_order = np.argsort(model.feature_importances_)[::-1]
-    top_k = cfg["loco"]["top_k"]
-    top_features = [feature_names[i] for i in mdi_order[:top_k]]
+    This implements the risk drop from Definition 2.7, using a configurable
+    function class (e.g. random forest or linear model) evaluated on a held-out
+    test set.
+    """
+    X = X_df.to_numpy(dtype=float)
+    y = np.asarray(y, dtype=float)
+    split = _risk_split(len(y), cfg["risk"].get("test_size", 0.3), rng)
+    random_state = int(rng.integers(1, 2**31))
 
-    y_series = pd.Series(y, index=X_df.index)
-    scores = {}
-    for i, feat in enumerate(top_features):
-        X_drop = X_df.drop(columns=[feat])
-        fresh_rng = np.random.default_rng(seed)
-        reduced_model, _ = fit_final(X_drop, y_series, cfg, fresh_rng)
-        reduced_pred = reduced_model.classes_[
-            reduced_model.oob_decision_function_.argmax(axis=1)
-        ]
-        scores[feat] = full_mcc - mcc_score(y, reduced_pred)
-        if (i + 1) % 10 == 0 or i == 0:
-            log.info(f"  loco [{i + 1}/{top_k}] {feat}: {scores[feat]:.4f}")
+    everything = tuple(range(X.shape[1]))
+    full_risk = _subset_risk(everything, X, y, cfg["risk"], split, random_state)
+    scores = [
+        _subset_risk(
+            tuple(k for k in everything if k != j), X, y, cfg["risk"], split,
+            random_state,
+        ) - full_risk
+        for j in everything
+    ]
+    return pd.Series(scores, index=feature_names, name="loco")
 
-    result = pd.Series(0.0, index=feature_names, name="loco")
-    for feat, val in scores.items():
-        result[feat] = val
-    return result
+
+@register("lasso")
+def lasso(X, y, feature_names, response_type, rng):
+    """|beta[j]| from a cross-validated lasso.
+
+    It's either an L1-regularized regression or logistic regression, depending
+    on the response type.
+    """
+    random_state = int(rng.integers(1, 2**31))
+    if response_type == "classification":
+        estimator = LogisticRegressionCV(
+            penalty="l1", solver="liblinear", max_iter=1000,
+            random_state=random_state,
+        )
+    else:
+        estimator = LassoCV(random_state=random_state)
+
+    fitted = make_pipeline(StandardScaler(), estimator).fit(X, y)
+    coef = np.ravel(fitted[-1].coef_)
+    return pd.Series(np.abs(coef), index=feature_names, name="lasso")
 
 
 @register("correlation")
@@ -111,35 +136,57 @@ def knockoff_scores(X_df, y, feature_names, kcfg, rng):
     return result
 
 
-def _subset_risk(subset, X, y, model_params, random_state):
-    """In-sample MSE of an XGBoost regressor fit on ``X[:, subset]``."""
-    if len(subset) == 0:
-        return float(np.mean((y - y.mean()) ** 2))
+def _fit_predictor(risk_cfg, random_state):
+    """Estimator drawn from the declared function class F.
 
-    model = xgb.XGBRegressor(
-        objective="reg:squarederror",
-        random_state=random_state,
-        **model_params,
+    We implement either Ridge Regression or XGBoost to mirror Risk Relevance's
+    (Definition 2.7) dependence on simple vs. rich function classes.
+    """
+    model_class = risk_cfg.get("model_class", "rich")
+    if model_class == "linear":
+        return Ridge(**risk_cfg.get("linear_params", {}))
+    if model_class == "rich":
+        return xgb.XGBRegressor(
+            objective="reg:squarederror",
+            random_state=random_state,
+            n_jobs=1, # single threading actually faster, less setup/teardown cost
+            **risk_cfg.get("model_params", {}),
+        )
+    raise ValueError(
+        f"Unknown risk model_class: {model_class!r}. Use 'linear' or 'rich'."
     )
-    X_subset = X[:, subset]
-    model.fit(X_subset, y)
-    y_pred = model.predict(X_subset)
-    return float(np.mean((y - y_pred) ** 2))
+
+
+def _risk_split(n, test_size, rng):
+    """Share train/test splits across coalitions."""
+    indices = rng.permutation(n)
+    n_test = min(n - 1, max(1, int(round(test_size * n))))
+    return indices[n_test:], indices[:n_test]
+
+
+def _subset_risk(subset, X, y, risk_cfg, split, random_state):
+    """Held-out squared-error risk of a predictor fit on ``X[:, subset]``."""
+    train, test = split
+    if len(subset) == 0:
+        return float(np.mean((y[test] - y[train].mean()) ** 2))
+
+    columns = list(subset)
+    model = _fit_predictor(risk_cfg, random_state)
+    model.fit(X[np.ix_(train, columns)], y[train])
+    prediction = model.predict(X[np.ix_(test, columns)])
+    return float(np.mean((y[test] - prediction) ** 2))
 
 
 def risk_importance_details(X, y, feature_names, risk_cfg, rng):
-    """Compute one shared set of sampled orderings for SAGE and minSHAP.
-
-    This is used to understand minSHAP vs. SHAP contributions for a single
-    sample.
-    """
-    details = _risk_contribution_details(
-        X, y, risk_cfg["n_orderings"], risk_cfg["model_params"], rng
-    )
+    """Share coalitions in SAGE and minSHAP."""
+    details = _risk_contribution_details(X, y, risk_cfg, rng)
     contributions = details[0]
+
+    # we truncate minSHAP below at zero, since theoretically V(j \cup S) > V(S)
+    # see Theorem 2 of the minSHAP paper
     minshap = pd.Series(
         contributions.min(axis=0), index=feature_names, name="minshap"
-    )
+    ).clip(lower=0)
     sage = pd.Series(contributions.mean(axis=0), index=feature_names, name="sage")
     return minshap, sage, risk_contribution_frame(details, feature_names)
 
@@ -158,22 +205,29 @@ def sage_importance(X, y, feature_names, risk_cfg, rng):
     return sage
 
 
-def _risk_contribution_details(X, y, n_orderings, model_params, rng):
-    """Return sampled contributions and predecessor coalitions."""
-    _, d = X.shape
+def _risk_contribution_details(X, y, risk_cfg, rng):
+    """Internal helper for risk_contribution_details.
+
+    This returns sampled contributions C(j | S) and associated coalitions S. We
+    avoid re-computing risks if we've seen the coalition before, using the
+    risk_cache  object.
+    """
+    n, d = X.shape
+    n_orderings = risk_cfg["n_orderings"]
     base_seed = int(rng.integers(1, 2**31))
+    split = _risk_split(n, risk_cfg.get("test_size", 0.3), rng)
     risk_cache = {}
 
+    # helper to compute risk and save to cache
     def risk(subset):
         key = tuple(sorted(int(j) for j in subset))
         if key not in risk_cache:
-            mask = sum(1 << j for j in key)
-            random_state = (base_seed + mask) % (2**31 - 1) or 1
             risk_cache[key] = _subset_risk(
-                key, X, y, model_params, random_state=random_state
+                key, X, y, risk_cfg, split, random_state=base_seed
             )
         return risk_cache[key]
 
+    # randomly sample coalitions and evaluate contributions
     contributions = np.empty((n_orderings, d))
     predecessors = [[None] * d for _ in range(n_orderings)]
 
@@ -270,8 +324,6 @@ def pdp_variance(model, X, feature_names, grid_resolution):
     for j in range(X.shape[1]):
         result = pd_func(model, X, features=[j], grid_resolution=grid_resolution, kind="average")
         scores[j] = np.var(result["average"][0])
-        if (j + 1) % 100 == 0:
-            log.info(f"  pdp_variance [{j + 1}/{X.shape[1]}]")
 
     return pd.Series(scores, index=feature_names, name="pdp_variance")
 
@@ -293,8 +345,6 @@ def integrated_gradients_importance(model, X, feature_names, ig_cfg, seed, rng, 
     for i, idx in enumerate(sample_idx):
         res = explainer.explain(f, X[idx])
         attr_matrix[i] = res.as_array()
-        if (i + 1) % 10 == 0 or i == 0:
-            log.info(f"  integrated_gradients [{i + 1}/{n_samples}]")
 
     return pd.Series(
         np.mean(np.abs(attr_matrix), axis=0), index=feature_names, name="integrated_gradients"
