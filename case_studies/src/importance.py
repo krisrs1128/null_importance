@@ -181,9 +181,12 @@ def risk_importance_details(X, y, feature_names, risk_cfg, rng):
     """Share coalitions in SAGE and minSHAP."""
     details = _risk_contribution_details(X, y, risk_cfg, rng)
     contributions = details[0]
+
+    # we truncate minSHAP below at zero, since theoretically V(j \cup S) > V(S)
+    # see Theorem 2 of the minSHAP paper
     minshap = pd.Series(
         contributions.min(axis=0), index=feature_names, name="minshap"
-    )
+    ).clip(lower=0)
     sage = pd.Series(contributions.mean(axis=0), index=feature_names, name="sage")
     return minshap, sage, risk_contribution_frame(details, feature_names)
 
