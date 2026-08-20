@@ -5,6 +5,10 @@ known data generating process as a "model" to explain. We need this file (can't
 just save the means while generating data) because many explanations need to
 evaluate the "model" at new dataset configurations. This returns the ground
 truth mean for the perturbed/intervened data for use in that explanation.
+
+SCORES[name] agrees with E[Y | X] for every data generating process, but they
+can differ at design locations that are not in the training data. This idea is
+used by Example 3.3 (conditional statistical null without functional null).
 """
 import numpy as np
 import pandas as pd
@@ -78,6 +82,38 @@ def _score_confounding(X_df, cfg):
     n_nonnull = cfg["n_nonnull"]
     cols = [X_df[f"x{j + 1}"] for j in range(n_nonnull)]
     return MEAN_FNS["confounding"](cols, cfg)
+
+
+@register_score("redundant_pair")
+def _score_redundant_pair(X_df, cfg):
+    """Average both copies of each latent, the representation of Example 3.3.
+
+    On the data the two copies coincide and this equals E[Y|X]. Off the data
+    they do not, which is why gradients and partial dependence see both copies
+    while the conditional and risk methods see neither.
+    """
+    n_groups = cfg["n_nonnull"] // 2
+    cols = [
+        (X_df[f"x{2 * j + 1}"] + X_df[f"x{2 * j + 2}"]) / 2
+        for j in range(n_groups)
+    ]
+    return MEAN_FNS["redundant_pair"](cols, cfg)
+
+
+@register_score("bayes_incomplete")
+def _score_bayes_incomplete(X_df, cfg):
+    # Odd/even refer to anchors and (truly null) squares of the anchors.
+    n_groups = cfg["n_nonnull"] // 2
+    cols = [X_df[f"x{2 * j + 1}"] for j in range(n_groups)]
+    return MEAN_FNS["bayes_incomplete"](cols, cfg)
+
+
+@register_score("heteroscedastic")
+def _score_heteroscedastic(X_df, cfg):
+    # Odd is used in the mean; evens influence the noise scale.
+    n_groups = cfg["n_nonnull"] // 2
+    cols = [X_df[f"x{2 * j + 1}"] for j in range(n_groups)]
+    return MEAN_FNS["heteroscedastic"](cols, cfg)
 
 
 def _sigmoid(z):
