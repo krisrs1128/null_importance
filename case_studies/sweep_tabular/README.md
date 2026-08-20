@@ -13,7 +13,7 @@ generation from the minSHAP paper. These include,
 $$\mu(x) = \beta \sum_{j \in \mathcal{S}} x_j$$
 
 - Parity function:
-$$\mu(x) = -\gamma \prod_{j \in \mathcal{S}} \text{sign}(x_j), \quad x_j \sim U[-1,1]$$
+$$\mu(x) = -\gamma \sum_{\text{groups}} \prod_{j \in \text{group}} \text{sign}(x_j), \quad x_j \sim U[-1,1]$$
 
 - Product:
 $$\mu(x) = \gamma \sum_k x_{2k-1} x_{2k}$$
@@ -47,12 +47,30 @@ $$
 
 For explanation, we consider marginal correlation (pearson for regression,
 biserial for classification), permutation importance, integrated gradients,
-knockoffs (from the `knockpy` package), minSHAP, SAGE, PDP (variance of the
-fitted profile), and GCM. minSHAP and SAGE are both implemented using `V(S) =
--E[l(Y, f_S(X_S))]`, where teh loss comes from an XGBoost model based on
-features $X_{S}$.  We aren't using MDI, TreeSHAP, or LOCO because our
-implementations assume a tree model and for this synthetic data experiment we
-treat the simulated mean response as the prediction.
+knockoffs (from the `knockpy` package), lasso, LOCO, MDI, minSHAP, SAGE, PDP
+(variance of the profile), and GCM. minSHAP and SAGE are implemented with `V(S)
+= -E[l(Y, f_S(X_S))]`, where the loss comes from a model fitted on features
+$X_{S}$ in the training data and evaluated on held-out rows.
+
+### Null vs. Nonnull Decision Rules
+
+For any given notion of null importance, we decide whether it is null vs. nonnull using either,
+
+- Zero-reference: For some methods, we can use a nonzero importance to declare importance. For now, we only apply this rule to minSHAP.
+- Noise calibrated: For the rest, we use the importance scores on noise features ("pads") to determine a rejection threshold. Specifically, we compute a p-value,
+
+$$
+\frac{1 + \#\{ \text{pads with score} \ge s_j \}}{1 + n_{\text{pads}}}
+$$
+
+so this depends on the number of noise features. The rejection threshold is declared in the configuration file.
+
+We also define a notion of "null mass" for the proportion of importance that is
+assigned to null features. This is just,
+
+$$
+\frac{\sum_{j \in \text{Null}}\left|\varphi_{j}\right|}{\sum_{j} \left|\varphi_{j}\right|}
+$$
 
 ### Workflow
 
@@ -74,6 +92,10 @@ python sweep.py
 python risk_summaries.py
 python evaluate.py
 ```
+
+`sweep.py` skips any `(dataset, n, response_type, seed, method)` whose CSV is
+already present, so make sure to delete `data/` and `results/` if you want to
+replace results.
 
 The synthetic data are saved into separate CSVs in a `data` subdirectory of this
 case study directory, with names like `data/{dataset}_{n}.csv`.  For example,

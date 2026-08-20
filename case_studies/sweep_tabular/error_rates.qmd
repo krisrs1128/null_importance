@@ -1,5 +1,5 @@
 ---
-title: "Null Importance as a Testing Problem"
+title: "Null Importance Hypothesis Testing"
 format:
   html:
     embed-resources: true
