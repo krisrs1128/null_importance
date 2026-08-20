@@ -36,9 +36,11 @@ ev <- load_evaluation(evaluation_dir)
 
 ```{r minshap-scores-d1}
 p <- list()
+idx <- 1
 for (i in seq_len(10)) {
     for (method in c("minshap", "sage", "permutation")) {
-        p[[i]] <- feature_score_panel(ev$scores, glue("D{i}"), which_method=method)
+        p[[idx]] <- feature_score_panel(ev$scores, glue("D{i}"), which_method=method)
+        idx <- idx + 1
     }
 }
 
