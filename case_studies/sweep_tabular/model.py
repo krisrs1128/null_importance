@@ -13,10 +13,25 @@ used by Example 3.3 (conditional statistical null without functional null).
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from means import MEAN_FNS, chain_terminal_indices
 
 SCORES = {}
+
+
+def fit_explanation_tree(X, y, response_type, params, random_state):
+    """Fit the CART model used by methods that require tree structure.
+
+    Most methods in the synthetic sweep explain the declared DGP function.
+    MDI and TreeSHAP instead require an actually fitted tree.
+    """
+    Tree = (
+        DecisionTreeClassifier
+        if response_type == "classification"
+        else DecisionTreeRegressor
+    )
+    return Tree(random_state=random_state, **params).fit(X, y)
 
 
 def register_score(name):
