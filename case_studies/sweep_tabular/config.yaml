@@ -225,9 +225,8 @@ risk:
   linear_params:
     alpha: 1.0
 
-# Forest fitted on the data for the methods in FITTED_MODEL_METHODS.
-surrogate:
-  n_estimators: 200
+# CART model fitted on the data for the methods in FITTED_MODEL_METHODS.
+explanation_tree:
   min_samples_leaf: 5
 
 # gather focused data to understand shap vs. minshap
