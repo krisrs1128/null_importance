@@ -72,7 +72,7 @@ mfa_by_dataset <- map(datasets, \(ds) {
     mfa_by_sample_size(
         ds,
         ns = sample_sizes,
-        response_type = "classification",
+        response_type = "regression",
         seeds = seeds,
         methods = methods,
         results_dir = results_dir
@@ -86,8 +86,8 @@ datasets_by_dim1 <- names(sort(dim1_var, decreasing = TRUE))
 
 panel_labels <- imap_chr(mfa_by_dataset, \(res, ds) {
     glue(
-        "{ds}\n(Dim1 {round(res$var_explained[1], 1)}%, ",
-        "Dim2 {round(res$var_explained[2], 1)}%)"
+        "{ds}\n({round(res$var_explained[1], 1)}%, ",
+        "{round(res$var_explained[2], 1)}%)"
     )
 })
 panel_levels <- panel_labels[datasets_by_dim1]
@@ -121,13 +121,14 @@ p_mfa_scores <- ggplot(mfa_df, aes(Dim.1, Dim.2)) +
     ) +
     geom_point(aes(color = null_type), size = 3) +
     geom_text_repel(
+        data = filter(mfa_df, !str_detect(feature, "noise")),
         aes(color = null_type, label = feature),
         size = 3, show.legend = FALSE, max.overlaps = 20
     ) +
     facet_wrap(~panel_label, scales = "free", nrow = 2) +
     scale_color_manual(values = null_colors, name = "Null type") +
     labs(
-        title = "Feature Importance MFA: scores",
+        title = "MFA scores",
         x = "Dimension 1", y = "Dimension 2"
     )
 p_mfa_scores
@@ -145,113 +146,61 @@ loadings_long <- loadings_df |>
         sign = if_else(loading >= 0, "positive", "negative")
     )
 
-p_mfa_loadings <- ggplot(loadings_long, aes(method, dataset)) +
+# Cluster methods independently within each MFA dimension.  Each method is
+# represented by its loading profile across datasets, so nearby methods have
+# similar profiles in the corresponding facet.
+method_orders <- loadings_long |>
+    select(dim, method, dataset, loading) |>
+    pivot_wider(names_from = dataset, values_from = loading) |>
+    group_nest(dim) |>
+    mutate(method_order = map(data, function(d) {
+        method_matrix <- d |>
+            select(-method) |>
+            as.matrix()
+        rownames(method_matrix) <- d$method
+
+        hc <- hclust(dist(method_matrix), method = "ward.D2")
+        tibble(
+            method = rownames(method_matrix)[hc$order],
+            cluster_order = seq_along(hc$order)
+        )
+    })) |>
+    select(dim, method_order) |>
+    unnest(method_order)
+
+loadings_long <- loadings_long |>
+    left_join(method_orders, by = c("dim", "method")) |>
+    mutate(method_ordered = reorder_within(
+        method, cluster_order, dim, sep = "___"
+    ))
+
+p_mfa_loadings <- ggplot(loadings_long, aes(method_ordered, dataset)) +
     geom_point(
         aes(size = abs(loading), fill = sign),
         shape = 22, color = axiom_palette$ink, stroke = 0.4
     ) +
-    facet_wrap(~dim, nrow = 1) +
+    facet_wrap(~dim, nrow = 1, scales = "free_x") +
+    scale_x_reordered() +
     scale_size_area(max_size = 10, limits = c(0, 1), name = "|Loading|") +
     scale_fill_manual(
         values = c(positive = axiom_palette$ink, negative = "white"),
         name = "Sign"
     ) +
     labs(
-        title = "Feature Importance MFA: loadings",
+        title = "MFA loadings",
         x = "Method", y = NULL
     ) +
     theme(
         axis.text.x = element_text(angle = 90, hjust = 1),
         panel.background = element_rect(fill = "#cecdcd", color = NA),
-        panel.grid.major = element_blank()
+        panel.grid.major = element_blank(),
+        strip.text = element_text(size=10)
     )
 p_mfa_loadings
 ggsave(
     path(fig_dir, "fig_mfa_loadings.svg"), p_mfa_loadings,
     width = 10, height = 5
 )
-```
-
-## Variable importance rankings
-
-These are rankings at $n = 500$ for the classification tasks, with panels
-ordered by variance in rankings. This parallels the MFA, with correlation and
-knockoffs struggling with nonlinear data and correlation is failing for
-dependent features. There are also some ties.
-In real data this would be unusual, but we are explaining the simulated function
-itself (not a fitted model), so the feature importances are actually equal —
-e.g., for linear additive, noise features aren't in the model, so predictions
-don't change when permuted.
-
-```{r fig-bump, fig.width=15, fig.height=8}
-n_features <- length(FEATURE_ORDER)
-strip_y <- n_features + 0.9
-method_shapes <- setNames(
-    c(15, 16, 17, 18, 3, 4, 8, 11)[seq_along(methods)], methods
-)
-
-ranks_by_dataset <- map(datasets, \(ds) {
-    map_dfr(seeds, \(s) {
-        method_ranks(
-            ds, n = 500, response_type = "classification", seed = s,
-            methods = methods, results_dir = results_dir
-        ) |>
-            mutate(seed = s)
-    })
-})
-names(ranks_by_dataset) <- datasets
-
-# Order datasets by variance in their feature rankings
-datasets_by_disagreement <- names(sort(map_dbl(ranks_by_dataset, \(df) {
-    df |>
-        group_by(feature) |>
-        summarize(v = var(rank)) |>
-        pull(v) |>
-        mean(na.rm = TRUE)
-}), decreasing = TRUE))
-
-# Define legends that will appear in the last panel of the patchwork grid
-null_legend_panel <- tibble(null_type = names(null_colors)) |>
-    mutate(
-        null_type = fct_rev(factor(null_type, levels = names(null_colors)))
-    ) |>
-    ggplot(aes(x = 1, y = null_type, fill = null_type)) +
-    geom_tile(width = 0.5, height = 0.7, show.legend = FALSE) +
-    geom_text(aes(label = null_type), x = 1.35, hjust = 0, size = 4) +
-    scale_fill_manual(values = null_colors) +
-    xlim(0.6, 3) +
-    labs(title = "Null type") +
-    theme_void() +
-    theme(
-        plot.title = element_text(hjust = 0, size = rel(1.1)),
-        plot.background = element_rect(fill = axiom_palette$bg, color = NA)
-    )
-
-method_legend_panel <- tibble(
-    method = fct_rev(factor(methods, levels = methods))
-) |>
-    ggplot(aes(x = 1, y = method, shape = method)) +
-    geom_point(
-        size = 2.8, stroke = 1, color = axiom_palette$ink, show.legend = FALSE
-    ) +
-    geom_text(aes(label = method), x = 1.35, hjust = 0, size = 4) +
-    scale_shape_manual(values = method_shapes) +
-    xlim(0.6, 3) +
-    labs(title = "Method") +
-    theme_void() +
-    theme(
-        plot.title = element_text(hjust = 0, size = rel(1.1)),
-        plot.background = element_rect(fill = axiom_palette$bg, color = NA)
-    )
-
-legend_panel <- (null_legend_panel | method_legend_panel)
-bump_panels <- map(datasets_by_disagreement, bump_panel)
-p_bump <- wrap_plots(
-    c(bump_panels, list(legend_panel)), ncol = 2, guides = "collect"
-) +
-    plot_annotation(title = glue("Importance Rankings (n=500, classification)"))
-p_bump
-ggsave(path(fig_dir, "fig_rank_bump.svg"), p_bump, width = 13, height = 7)
 ```
 
 ## Marginal vs. conditional null importance
@@ -396,7 +345,6 @@ mediated_stem <- with(
 mediated <- load_mediated_contributions(mediated_stem, results_dir)
 mediated_contributions <- mediated$contributions
 mediated_membership <- mediated$membership
-mediated_aggregates <- mediated$aggregates
 ```
 
 ## Exact sampled conditional contributions
@@ -428,19 +376,5 @@ p_mediated_highlight
 ggsave(
     path(fig_dir, "fig_mediated_chain_contribution_highlight.svg"),
     p_mediated_highlight, width = 10, height = 5
-)
-```
-
-## Aggregated contributions
-
-```{r fig-mediated-aggregate-hinton}
-#| fig-width: 10
-#| fig-height: 8
-p_mediated_hinton <- mediated_hinton_plot(mediated_aggregates)
-p_mediated_hinton
-
-ggsave(
-    path(fig_dir, "fig_mediated_chain_aggregate_hinton.svg"),
-    p_mediated_hinton, width = 12, height = 4.5
 )
 ```

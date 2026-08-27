@@ -166,69 +166,6 @@ mfa_by_sample_size <- function(
     )
 }
 
-#' Cross-method importance ranks per feature.
-#' Ranks methods' importance within (dataset, n, response_type, seed).
-#' @param dataset dataset name
-#' @param n sample size
-#' @param response_type "classification" or "regression"
-#' @param seed seed
-#' @param methods method names
-#' @param results_dir results directory
-method_ranks <- function(
-    dataset, n, response_type, seed, methods, results_dir = "results"
-) {
-    map_dfr(
-        methods,
-        ~ load_method_importance(
-            dataset, n, response_type, seed, .x, results_dir
-        )
-    ) |>
-        group_by(method) |>
-        mutate(rank = rank(-importance, ties.method = "average")) |>
-        ungroup()
-}
-
-
-bump_panel <- function(ds) {
-    df <- ranks_by_dataset[[ds]]
-    labels <- null_type_table() |>
-        filter(dataset == ds) |>
-        mutate(x = match(feature, FEATURE_ORDER)) |>
-        arrange(x)
-    df <- df |>
-        left_join(select(labels, feature, x, null_type), by = "feature")
-
-    ggplot(df, aes(x = x, y = rank)) +
-        geom_tile(
-            data = labels, aes(x = x, y = strip_y, fill = null_type),
-            height = 0.7, width = 0.9, inherit.aes = FALSE
-        ) +
-        geom_bump(
-            aes(group = interaction(method, seed)),
-            color = axiom_palette$grid, linewidth = 0.4, alpha = 0.35,
-            smooth = 8
-        ) +
-        geom_point(
-            aes(shape = method, color = null_type),
-            size = 1.8, stroke = 0.8, alpha = 0.35
-        ) +
-        scale_x_continuous(breaks = labels$x, labels = labels$feature) +
-        scale_y_reverse(breaks = 1:n_features, limits = c(strip_y + 0.6, 0.5)) +
-        scale_shape_manual(
-            values = method_shapes, limits = methods,
-            name = "Method", guide = "none"
-        ) +
-        scale_color_manual(
-            values = null_colors, limits = names(null_colors), guide = "none"
-        ) +
-        facet_grid(. ~ method) +
-        scale_fill_manual(
-            values = null_colors, limits = names(null_colors), guide = "none"
-        ) +
-        theme(axis.text.x = element_text(angle = 90, size = 7)) +
-        labs(title = ds, x = NULL, y = "Rank")
-}
-
 # minSHAP mediated-chain diagnostic --------------------------------------
 
 #' Load and wrangle one run's sampled mediated-chain contribution details.
@@ -236,7 +173,7 @@ bump_panel <- function(ds) {
 #' @param stem file stem, e.g. "mediated_chains_5000_regression_2026"
 #' @param results_dir results directory
 #' @param feature_order feature display order (default FEATURE_ORDER)
-#' @return list(contributions, membership, aggregates)
+#' @return list(contributions, membership)
 load_mediated_contributions <- function(
     stem, results_dir, feature_order = FEATURE_ORDER
 ) {
@@ -262,26 +199,7 @@ load_mediated_contributions <- function(
             coalition_feature = factor(coalition_feature, levels = feature_order)
         )
 
-    aggregates <- contributions |>
-        group_by(ordering, target) |>
-        summarize(contribution = first(contribution), .groups = "drop") |>
-        group_by(target) |>
-        summarize(
-            shapley = mean(contribution),
-            minshap = min(contribution),
-            .groups = "drop"
-        ) |>
-        pivot_longer(
-            c(shapley, minshap), names_to = "aggregation", values_to = "importance"
-        ) |>
-        mutate(
-            aggregation = recode(
-                aggregation,
-                shapley = "Shapley (mean)", minshap = "minSHAP (minimum)"
-            )
-        )
-
-    list(contributions = contributions, membership = membership, aggregates = aggregates)
+    list(contributions = contributions, membership = membership)
 }
 
 #' Subset and re-level the mediated-chain tables to a chosen set of targets.
@@ -331,7 +249,9 @@ mediated_membership_plot <- function(
     membership, outline,
     title = "Coalitions for mediated chains"
 ) {
-    ggplot(membership, aes(coalition_feature, ordering_sorted)) +
+    membership |>
+        filter(!str_detect(coalition_feature, "^noise_([2-9]|[1-9][0-9]+)$")) |>
+        ggplot(aes(coalition_feature, ordering_sorted)) +
         geom_tile(
             aes(fill = factor(included)), color = "white", linewidth = 0.25
         ) +
@@ -347,9 +267,14 @@ mediated_membership_plot <- function(
         scale_y_reordered() +
         labs(title = title, x = "Feature", y = "Sampled ordering") +
         theme(
-            axis.text.x = element_text(angle = 90, hjust = 1),
+            axis.text.x = element_text(angle = 90, hjust = 1, size = 10),
+            strip.text = element_text(size = 12),
+            legend.text = element_text(size = 12),
+            legend.title = element_text(size = 14),
             axis.text.y = element_blank(),
             axis.ticks.y = element_blank(),
+            title.text = element_text(size = 16),
+            axis.title = element_text(size = 14),
             panel.grid = element_blank()
         )
 }
@@ -372,62 +297,16 @@ mediated_bars_plot <- function(bars) {
         ) +
         scale_y_reordered() +
         labs(
-            title = expression("Contributions" * I[j](S)),
-            x = expression(I[j](S)), y = NULL
+            title = expression("Contributions " * I[j](S)),
+            x = expression(I[j](S)), y = NULL,
         ) +
-        theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
-}
-
-#' Hinton diagram of aggregated Shapley/minSHAP importances.
-#'
-#' Square area encodes |importance| and fill encodes sign.
-#'
-#' @param aggregates (target, aggregation, importance) table, see
-#'   `load_mediated_contributions()$aggregates`
-#' @param feature_order feature display order for the x axis (default
-#'   FEATURE_ORDER)
-mediated_hinton_plot <- function(aggregates, feature_order = FEATURE_ORDER) {
-    hinton_scale <- max(abs(aggregates$importance), na.rm = TRUE)
-    hinton <- aggregates |>
-        mutate(
-            side = sqrt(abs(importance) / hinton_scale),
-            sign = if_else(importance >= 0, "Positive", "Negative"),
-            target_num = as.numeric(target),
-            aggregation_num = as.numeric(factor(
-                aggregation, levels = c("Shapley (mean)", "minSHAP (minimum)")
-            ))
+        theme(
+            axis.text.y = element_blank(),
+            strip.text = element_text(size = 12),
+            title.text = element_text(size = 16),
+            axis.ticks.y = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            panel.background = element_rect(fill = "#ffffff")
         )
-
-    ggplot(hinton) +
-        geom_tile(
-            aes(target_num, aggregation_num),
-            width = 1, height = 1, fill = "#bdbdbd"
-        ) +
-        geom_rect(aes(
-            xmin = target_num - 0.44 * side,
-            xmax = target_num + 0.44 * side,
-            ymin = aggregation_num - 0.44 * side,
-            ymax = aggregation_num + 0.44 * side,
-            fill = sign
-        )) +
-        scale_x_continuous(
-            breaks = seq_along(feature_order),
-            labels = feature_order,
-            expand = c(0, 0)
-        ) +
-        scale_y_continuous(
-            breaks = 1:2,
-            labels = c("SHAP", "minSHAP"),
-            limits = c(2.55, 0.45),
-            expand = c(0, 0)
-        ) +
-        scale_fill_manual(
-            values = c(Positive = "#252525", Negative = "white"), name = "Sign"
-        ) +
-        coord_fixed() +
-        labs(
-            title = "Shapley and minSHAP",
-            x = "Feature", y = NULL
-        ) +
-        theme(panel.grid = element_blank())
 }
