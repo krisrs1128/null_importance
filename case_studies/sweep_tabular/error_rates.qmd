@@ -54,8 +54,8 @@ theoretical <- load_theoretical_table(
     base / "table1_theoretical.csv", cfg$theoretical_rows
 )
 
-save_fig <- function(plot, name, width = 11, height = 7) {
-    ggsave(fig_dir / name, plot, width = width, height = height)
+save_fig <- function(plot, name, width = 11, height = 7, dpi = 200) {
+    ggsave(fig_dir / name, plot, width = width, height = height, dpi = dpi)
     plot
 }
 ```
@@ -81,7 +81,7 @@ save_fig <- function(plot, name, width = 11, height = 7) {
 #| fig-width: 6
 #| fig-height: 5
 notion_separation_panel(ev$truth) |>
-    save_fig("fig_notion_separation.svg", width = 8, height = 6)
+    save_fig("fig_notion_separation.png", width = 8, height = 6)
 ```
 
 Notice that the power can depend a lot on sample size.
@@ -89,7 +89,7 @@ Notice that the power can depend a lot on sample size.
 ```{r confusion-conditional}
 walk(cfg$sample_sizes, \(sample_size) {
     confusion_panel(ev$confusion, "conditional", sample_size = sample_size) |>
-        save_fig(glue("fig_confusion_conditional_n{sample_size}.svg"), height = 9) |>
+        save_fig(glue("fig_confusion_conditional_n{sample_size}.png"), height = 9) |>
         print()
 })
 ```
@@ -97,7 +97,7 @@ walk(cfg$sample_sizes, \(sample_size) {
 ```{r confusion-causal}
 walk(cfg$sample_sizes, \(sample_size) {
     confusion_panel(ev$confusion, "causal", sample_size = sample_size) |>
-        save_fig(glue("fig_confusion_causal_n{sample_size}.svg"), height = 9) |>
+        save_fig(glue("fig_confusion_causal_n{sample_size}.png"), height = 9) |>
         print()
 })
 ```
@@ -109,10 +109,10 @@ Next we evaluate $\frac{\sum_{j \in \text{Null}}\left|\varphi_{j}\right|}{\sum_{
 ```{r null-mass}
 #| fig-height: 6
 null_mass_panel(ev$null_mass, sample_size=500) |>
-    save_fig("fig_null_mass_n_500.svg", width = 12, height = 6)
+    save_fig("fig_null_mass_n_500.png", width = 12, height = 6)
 
 null_mass_panel(ev$null_mass, sample_size=5000) |>
-    save_fig("fig_null_mass_n_5000.svg", width = 12, height = 6)
+    save_fig("fig_null_mass_n_5000.png", width = 12, height = 6)
 ```
 
 D7 nicely highlights the difference between SAGE and minSHAP.
@@ -139,7 +139,7 @@ ev$null_mass |>
 #| fig-height: 6
 walk(cfg$sample_sizes, \(sample_size) {
     table1_comparison_combined(ev$table1_by_n, sample_size = sample_size) |>
-        save_fig(glue("fig_table1_empirical_n{sample_size}.svg"), width = 14, height = 6) |>
+        save_fig(glue("fig_table1_empirical_n{sample_size}.png"), width = 14, height = 6) |>
         print()
 })
 ```
@@ -158,7 +158,7 @@ ev$table1 |>
 
 ```{r theory-vs-empirical}
 theory_vs_empirical_panel(ev$table1, theoretical) |>
-    save_fig("fig_theory_vs_empirical.svg", width = 9, height = 6)
+    save_fig("fig_theory_vs_empirical.png", width = 9, height = 6)
 ```
 
 ## Summarizing paper $\iff$ code connections
