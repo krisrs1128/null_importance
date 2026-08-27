@@ -72,7 +72,7 @@ mfa_by_dataset <- map(datasets, \(ds) {
     mfa_by_sample_size(
         ds,
         ns = sample_sizes,
-        response_type = "classification",
+        response_type = "regression",
         seeds = seeds,
         methods = methods,
         results_dir = results_dir
@@ -193,7 +193,7 @@ method_shapes <- setNames(
 ranks_by_dataset <- map(datasets, \(ds) {
     map_dfr(seeds, \(s) {
         method_ranks(
-            ds, n = 500, response_type = "classification", seed = s,
+            ds, n = 500, response_type = "regression", seed = s,
             methods = methods, results_dir = results_dir
         ) |>
             mutate(seed = s)
@@ -249,7 +249,7 @@ bump_panels <- map(datasets_by_disagreement, bump_panel)
 p_bump <- wrap_plots(
     c(bump_panels, list(legend_panel)), ncol = 2, guides = "collect"
 ) +
-    plot_annotation(title = glue("Importance Rankings (n=500, classification)"))
+    plot_annotation(title = glue("Importance Rankings (n=500, regression)"))
 p_bump
 ggsave(path(fig_dir, "fig_rank_bump.svg"), p_bump, width = 13, height = 7)
 ```
