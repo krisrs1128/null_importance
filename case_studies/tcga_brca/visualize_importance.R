@@ -1,3 +1,8 @@
+###############################################################################
+## Visualize the global importances from sweep.py. Settings are available in
+## config.yaml.
+###############################################################################
+
 library(tidyverse)
 library(scico)
 library(ggrepel)
@@ -7,41 +12,58 @@ library(here)
 library(fs)
 library(glue)
 
+source(here("case_studies", "src", "R", "importance_visualize_helpers.R"))
+
 # --- Paths & config ----------------------------------------------------------
 
 base <- here("case_studies", "tcga_brca")
 res <- path(base, "results")
-cfg <- yaml::read_yaml(path(base, "importance.yaml"))
+cfg <- yaml::read_yaml(path(base, "config.yaml"))
 
-categories <- tibble(
-    method = names(cfg$categories),
-    category = unlist(cfg$categories)
-)
+methods <- names(keep(cfg$methods, isTRUE))
+categories <- tibble(method = names(cfg$categories), category = cfg$categories) |>
+    unnest(category)
 
 theme_set(theme_bw(base_size = 10))
 
 # --- Helpers -----------------------------------------------------------------
 
 strip_prefix <- \(x) str_remove(x, "^(mrna|mirna|protein)__")
+parse_omic <- \(x) str_extract(x, "^[^_]+")
+omic_colors <- c(mrna = "#2b8cbe", mirna = "#e34a33", protein = "#31a354")
 
-# Load the importance matrix, drop all-NA columns, return cleaned matrix
-load_importance_data <- function() {
-    imp <- read_csv(path(res, "importance_matrix.csv"), show_col_types = FALSE)
-    cols <- setdiff(names(imp), "feature")
-    m <- imp |>
-        select(all_of(cols)) |>
-        as.matrix()
+#' Sample size used in the result filenames, read back from the sweep's output.
+sweep_sample_size <- function() {
+    stems <- path_file(dir_ls(res, glob = glue("*_{cfg$response_type}_*.csv")))
+    sizes <- str_match(stems, glue("^{cfg$dataset}_([0-9]+)_{cfg$response_type}_"))[, 2]
+    unique(na.omit(sizes)) |> as.numeric()
+}
 
-    # Drop all-NA columns (e.g. failed knockoffs)
-    keep <- colSums(!is.na(m)) > 0
+#' Average each method's importance profile over seeds.
+#'
+#' Returns the same shape `pca_plot()` and `corr_plot()` expect: features in
+#' rows, methods in columns, all-NA columns dropped.
+load_importance_data <- function(n) {
+    mats <- map(
+        cfg$seeds,
+        \(seed) importance_matrix(
+            cfg$dataset, n, cfg$response_type, seed, methods, res
+        )
+    )
+    features <- rownames(mats[[1]])
+    averaged <- reduce(map(mats, as.matrix), `+`) / length(mats)
+
+    keep_cols <- colSums(!is.na(averaged)) > 0
+    imp <- as_tibble(averaged, rownames = "feature")
     list(
         importance = imp,
-        mat = m[, keep, drop = FALSE],
-        method_cols = cols[keep]
+        mat = averaged[, keep_cols, drop = FALSE],
+        method_cols = colnames(averaged)[keep_cols],
+        features = features
     )
 }
 
-# PCA bi-plot of methods colored by null-importance category
+# PCA of methods colored by null-importance category
 pca_plot <- function(mat) {
     mat_z <- scale(mat)
     mat_z[is.na(mat_z)] <- 0
@@ -85,6 +107,36 @@ corr_plot <- function(mat) {
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
 
+# Plot mean SAGE vs. mean minSHAP per feature, colored by omic block
+credit_splitting_plot <- function(importance) {
+    feat_summary <- importance |>
+        transmute(
+            feature,
+            sage = sage,
+            minshap = minshap,
+            omic = parse_omic(feature)
+        ) |>
+        mutate(
+            residual = abs(minshap - sage),
+            label = if_else(
+                residual > quantile(residual, 0.99) | sage > quantile(sage, 0.99),
+                strip_prefix(feature),
+                NA_character_
+            )
+        )
+
+    ggplot(feat_summary, aes(sage, minshap, color = omic)) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey60") +
+        geom_point(size = 0.5) +
+        geom_text_repel(aes(label = label), size = 3, max.overlaps = 20, show.legend = FALSE) +
+        scale_color_manual(values = omic_colors, name = "Omic") +
+        labs(
+            x = "SAGE",
+            y = "minSHAP",
+            title = "SAGE vs minSHAP feature importance"
+        )
+}
+
 # Build one vignette panel: importance bar chart + PDP line plot
 vignette_panel <- function(feat, importance, method_cols, vignette_pdp) {
     feat_scores <- importance |>
@@ -118,7 +170,7 @@ vignette_plot <- function(importance, method_cols, k = 3) {
 # --- Run ---------------------------------------------------------------------
 
 # Load & prepare data
-d <- load_importance_data()
+d <- load_importance_data(sweep_sample_size())
 
 # Figure 1 — PCA bi-plot
 ggsave(
@@ -139,4 +191,11 @@ ggsave(
     path(res, "fig_vignettes.pdf"),
     vignette_plot(d$importance, d$method_cols),
     width = 10, height = 12
+)
+
+# Figure 4 — SAGE vs minSHAP credit-splitting scatter
+ggsave(
+    path(res, "fig_credit_splitting.pdf"),
+    credit_splitting_plot(d$importance),
+    width = 8, height = 6
 )
