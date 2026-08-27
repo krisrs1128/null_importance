@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import shap
 import knockpy
-from rf import fit_final
 from axiom_interp import presets
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LassoCV, LogisticRegressionCV, Ridge

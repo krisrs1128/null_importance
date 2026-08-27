@@ -135,4 +135,4 @@ if (!already_done("TCGA.BRCA.sampleMap_BRCA_clinicalMatrix.tsv")) {
     save_tsv(clin_out, "TCGA.BRCA.sampleMap_BRCA_clinicalMatrix.tsv")
 }
 
-message("\nAll done. Run pipeline.py to train models.")
+message("\nAll done. Run\n  python case_studies/src/attribute_classifier.py case_studies/tcga_brca\nto train models.")
