@@ -376,7 +376,7 @@ null_mass_panel <- function(null_mass, sample_size = NULL) {
         ) +
         theme(
             panel.grid.major.y = element_blank(),
-            axis.text.x = element_text(angle = 90, hjust = 0)
+            axis.text.x = element_text(angle = 90, hjust = 1)
         )
 }
 
