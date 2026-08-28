@@ -15,6 +15,9 @@ response_type: classification
 seeds: [895404, 392954, 953004, 876087]  # a few of the 40 from Novoloaca et al. 2024
 figures_dir: results/figures
 
+visualization:
+  pca_normalize_mass: true
+
 # Must match METHODS in case_studies/src/importance.py.
 methods:
   correlation: true
