@@ -10,8 +10,11 @@ dependencies:
   - scikit-learn
   - scipy
   - pyarrow
+  - joblib
+  - pyyaml
   - pip:
       - hydra-core
       - omegaconf
       - shap
       - knockpy
+      - xgboost

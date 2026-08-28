@@ -60,9 +60,7 @@ Rscript download_tcga.R
 python ../src/attribute_classifier.py .
 python sweep.py
 python vignettes.py
-python ../src/attribute_explainer.py . --quick
 Rscript visualize_importance.R
-Rscript visualize.R
 ```
 
 `attribute_classifier.py` preprocesses, screens, and trains, caching the design
@@ -99,9 +97,7 @@ aggregated them by their mean absolute value across samples.
 `vignettes.py` writes `vignette_features.csv` (the response and the raw values
 of the features whose importance profiles disagree most across methods) and
 `vignette_pdp.csv` (`feature,grid_value,pdp_value`), which back the per-feature
-panels. `attribute_explainer.py` writes the local attributions used by
-`visualize.R`: `shap_attributions.csv`, `minshap_attributions.csv`, and
-`patient_meta.csv`.
+panels.
 
 Hydra records the resolved configuration and log of each run under
 `outputs/{date}/{time}/`.
@@ -109,24 +105,21 @@ Hydra records the resolved configuration and log of each run under
 ### Figure summaries
 
 `visualize_importance.R` compares methods against each other, averaging each
-method's profile over seeds.
+method's profile over seeds. By default, the PCA uses each feature's fraction
+of a method's total absolute importance mass. Set
+`visualization.pca_normalize_mass: false` in `config.yaml` to instead z-score
+each method profile across features.
 
 - **`fig_method_pca.pdf`:** PCA of the methods, treating each method as a point
   in feature space. Methods targeting the same notion of null importance should
   land near each other.
+- **`fig_method_pca_loadings.pdf`:** The 100 largest absolute feature loadings
+  for each of the first two principal components, grouped by omic block.
 - **`fig_method_corr.pdf`:** Spearman rank correlation between methods, with
   the methods ordered by hierarchical clustering on $1 - \rho$.
 - **`fig_vignettes.pdf`:** For the features where the methods disagree most, the
-  importance each method assigns beside the fitted partial dependence curve.
-
-`visualize.R` compares SHAP with marginal minSHAP at the level of individual
-patients.
-
-- **`fig_credit_splitting.pdf`:** Mean $|$SHAP$|$ against mean $|$minSHAP$|$ per
-  feature, colored by omic. Points below the diagonal are features whose credit
-  SHAP splits among correlated copies.
-- **`fig_patient_panels.pdf`:** Top attributions under each method for two
-  confidently and two ambiguously classified lobular tumors.
-- **`fig_subgroups.pdf`:** Heatmap of the highest-variance SHAP attributions,
-  with patients and features clustered, beside each patient's predicted
-  probability.
+  fraction of each method's total absolute importance mass assigned to the
+  feature is shown beside its fitted partial dependence curve.
+- **`fig_credit_splitting.pdf`:** Mean SAGE against mean minSHAP per feature,
+  colored by omic. Points below the diagonal are features whose credit SAGE
+  splits among correlated copies.

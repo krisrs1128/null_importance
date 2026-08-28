@@ -69,15 +69,20 @@ load_attributions <- function(base_dir) {
 #' @param method_label Character label for the x-axis, e.g. \code{"SHAP"}.
 #' @param top_n Integer. Number of features to display.
 #' @return A ggplot object.
-attribution_barplot <- function(row_idx, attr_df, method_label, top_n = 10) {
+#' Barplot of a patient's top attributions.
+#'
+#' For minSHAP, the sign actually matters. For SHAP, we consider only
+#' magnitude.
+attribution_barplot <- function(row_idx, attr_df, method_label, top_n = 10, by_magnitude = TRUE) {
     vals <- as.numeric(attr_df[row_idx, ])
     names(vals) <- names(attr_df)
-    top_idx <- head(order(abs(vals), decreasing = TRUE), top_n)
+    rank_key <- if (by_magnitude) abs(vals) else vals
+    top_idx <- head(order(rank_key, decreasing = TRUE), top_n)
     tibble(
         feature = names(vals)[top_idx],
         value = vals[top_idx]
     ) |>
-        mutate(feature = fct_reorder(feature, abs(value))) |>
+        mutate(feature = fct_reorder(feature, if (by_magnitude) abs(value) else value)) |>
         ggplot(aes(value, feature)) +
         geom_col(fill = axiom_palette$ink) +
         labs(x = method_label, y = NULL) +

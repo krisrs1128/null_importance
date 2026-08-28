@@ -133,7 +133,8 @@ p_mfa_scores <- ggplot(mfa_df, aes(Dim.1, Dim.2)) +
     )
 p_mfa_scores
 ggsave(
-    path(fig_dir, "fig_mfa_scores.svg"), p_mfa_scores, width = 10, height = 6
+    path(fig_dir, "fig_mfa_scores.png"), p_mfa_scores, width = 10, height = 6,
+    dpi = 200
 )
 ```
 
@@ -198,8 +199,9 @@ p_mfa_loadings <- ggplot(loadings_long, aes(method_ordered, dataset)) +
     )
 p_mfa_loadings
 ggsave(
-    path(fig_dir, "fig_mfa_loadings.svg"), p_mfa_loadings,
-    width = 10, height = 5
+    path(fig_dir, "fig_mfa_loadings.png"), p_mfa_loadings,
+    width = 10, height = 5,
+    dpi = 200
 )
 ```
 
@@ -268,8 +270,9 @@ p_div <- ggplot(
 
 p_div
 ggsave(
-    path(fig_dir, "fig_divergence_dependent_features.svg"), p_div,
-    width = 7.5, height = 3
+    path(fig_dir, "fig_divergence_dependent_features.png"), p_div,
+    width = 7.5, height = 3,
+    dpi = 200
 )
 ```
 
@@ -323,8 +326,9 @@ p_div_corr <- ggplot(
 
 p_div_corr
 ggsave(
-    path(fig_dir, "fig_divergence_correlated.svg"), p_div_corr,
-    width = 7.5, height = 3
+    path(fig_dir, "fig_divergence_correlated.png"), p_div_corr,
+    width = 7.5, height = 3,
+    dpi = 200
 )
 ```
 
@@ -357,8 +361,9 @@ p_mediated_focus <- mediated_membership_plot(
 p_mediated_focus
 
 ggsave(
-    path(fig_dir, "fig_mediated_chain_contribution_focus.svg"),
-    p_mediated_focus, width = 15, height = 18
+    path(fig_dir, "fig_mediated_chain_contribution_focus.png"),
+    p_mediated_focus, width = 15, height = 18,
+    dpi = 200
 )
 ```
 
@@ -374,7 +379,8 @@ p_mediated_highlight <- mediated_membership_plot(
 p_mediated_highlight
 
 ggsave(
-    path(fig_dir, "fig_mediated_chain_contribution_highlight.svg"),
-    p_mediated_highlight, width = 10, height = 5
+    path(fig_dir, "fig_mediated_chain_contribution_highlight.png"),
+    p_mediated_highlight, width = 10, height = 5,
+    dpi = 200
 )
 ```

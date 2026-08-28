@@ -5,7 +5,10 @@ This is designed to reproduce the TCGA random forest experiments from
 https://doi.org/10.1093/bib/bbae331
 https://github.com/bioaster/benchmark-integrative-methods
 
-It's automatically called in pipeline.py, so no need to run this on its own.
+Shouldn't have to run this on its own because it's called by
+attribute_classifier.py, i.e.,
+
+    python case_studies/src/attribute_classifier.py case_studies/tcga_brca
 """
 
 from pathlib import Path
@@ -65,7 +68,7 @@ def adjust_covariates(X_df, cov_df):
 def load_data(config):
     """Return (X, y, y_labels) after full preprocessing."""
     cache_dir = Path(__file__).parent / "data" / "raw"
-    ds = config["datasets"]
+    ds = config["omics"]
 
     # Genomic data: rows = features, cols = samples → transpose
     mrna = load_cached_tsv(cache_dir, ds["mrna"]).T
@@ -101,8 +104,11 @@ def load_data(config):
     cov_cols = [c for c in config.get("covariates", []) if c in clinical.columns]
     cov_df = clinical[cov_cols] if cov_cols else pd.DataFrame(index=shared)
 
-    # Retain top-K variable features for mRNA; miRNA and protein kept in full
-    mrna = top_k_variable(mrna, config.get("top_features", 1000))
+    # Keep the top-K most variable features per block.
+    screening = config["screening"]
+    mrna = top_k_variable(mrna, screening["mrna"])
+    mirna = top_k_variable(mirna, screening["mirna"])
+    protein = top_k_variable(protein, screening["protein"])
 
     # Drop columns that are entirely NaN
     mrna = drop_nan_columns(mrna)

@@ -1,4 +1,58 @@
-datasets:
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+parallel:
+  n_jobs: -1
+
+# The data is exactly the same across seeds. The only randomness that's
+# introduced is the cross methods.
+dataset: tcga_brca
+response_type: classification
+seeds: [895404, 392954, 953004, 876087]  # a few of the 40 from Novoloaca et al. 2024
+figures_dir: results/figures
+
+visualization:
+  pca_normalize_mass: true
+
+# Must match METHODS in case_studies/src/importance.py.
+methods:
+  correlation: true
+  permutation: true
+  minshap: true
+  sage: true
+  knockoffs: true
+  pdp_variance: true
+  integrated_gradients: true
+  gcm: true
+  lasso: true
+  loco: true
+  mdi: true
+  treeshap: true
+
+# Notions of null importance each method targets
+categories:
+  correlation: [marginal]
+  permutation: [risk]
+  minshap: [conditional, risk]
+  sage: [marginal]
+  knockoffs: [conditional]
+  pdp_variance: [marginal, functional]
+  integrated_gradients: [functional]
+  gcm: [conditional, functional]
+  lasso: [marginal, conditional, risk]
+  loco: [conditional, risk]
+  mdi: [marginal]
+  treeshap: [risk]
+
+###############################################################################
+## Data
+###############################################################################
+
+omics:
   mrna: "TCGA.BRCA.sampleMap/HiSeqV2"
   mirna: "TCGA.BRCA.sampleMap/miRNA_HiSeq_gene"
   protein: "TCGA.BRCA.sampleMap/RPPA_RBN"
@@ -16,8 +70,17 @@ covariates:
   - "gender"
   - "race"
 
-# Top-K most variable features retained for mRNA
-top_features: 500
+# We only keep the top k variables per omic block. This is because the total
+# cost for minshap and Sage depends on the number of models times the number of
+# coalitions sampled.
+screening:
+  mrna: 150
+  mirna: 100
+  protein: 50
+
+###############################################################################
+## Model
+###############################################################################
 
 rf:
   n_trees: 50
@@ -26,13 +89,43 @@ rf:
 cv:
   n_folds: 5
 
-# A few of the 40 seeds from Novoloaca et al. 2024
-seeds:
-  - 895404
-  - 392954
-  - 953004
-  - 876087
-
+# Local SHAP / marginal minSHAP attributions (case_studies/src/attribute_explainer.py)
 explain:
   n_orderings: 200
   n_background: 50
+
+###############################################################################
+## Method-specific hyperparameters
+###############################################################################
+
+permutation:
+  n_repeats: 100
+
+risk:
+  n_orderings: 50   # lower than the the 200 in sweep.py because d is a few hundred, not 18
+  test_size: 0.3
+  default_class: rich # vs. linear
+  model_params:
+    n_estimators: 50
+    max_depth: 3
+  linear_params:
+    alpha: 1.0
+
+knockoffs:
+  fdr: 0.1
+  max_features: 500
+
+pdp:
+  grid_resolution: 20
+
+integrated_gradients:
+  n_samples: 10
+  n_steps: 64
+  eps: 1e-5
+
+gcm:
+  n_estimators: 100
+
+# Features shown in vignettes.py
+vignettes:
+  n_features: 100
