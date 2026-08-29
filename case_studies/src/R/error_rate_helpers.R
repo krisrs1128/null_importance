@@ -370,13 +370,85 @@ null_mass_panel <- function(null_mass, sample_size = NULL) {
             palette = "berlin", midpoint = 0.2, na.value = axiom_palette$grid
         ) +
         labs(
-            fill = "fraction of |phi| mass on null features",
+            fill = expression(
+                frac(
+                    sum(abs(varphi[j]), j %in% plain(Null)),
+                    sum(abs(varphi[j]), j)
+                )
+            ),
             y = NULL, x = NULL,
             title = glue("Mass placed on null features{title_n}")
         ) +
         theme(
             panel.grid.major.y = element_blank(),
-            axis.text.x = element_text(angle = 90, hjust = 1)
+            axis.text.x = element_text(size = 12, angle = 90, hjust = 1),
+            axis.text.y = element_text(size = 12),
+            plot.title = element_text(size = 14),
+            strip.text = element_text(size = 14),
+            legend.title = element_text(size = 12)
+        )
+}
+
+#' Rank methods by the mass they put on the notion's relevant features.
+#'
+#' $$\frac{\sum_{j \notin \text{Null}}\left|\varphi_{j}\right|}{\sum_{j} \left|\varphi_{j}\right|}$$
+#'
+#' @param null_mass Null-mass tibble from `load_evaluation` (same input as
+#'   `null_mass_panel`).
+#' @param sample_size If given, restrict to this `n` rather than averaging
+#'   over every sample size.
+#' @return A ggplot, one point per dataset, faceted by notion.
+power_mass_panel <- function(null_mass, sample_size = NULL) {
+    if (!is.null(sample_size)) {
+        null_mass <- filter(null_mass, n == sample_size)
+    }
+
+    cells <- null_mass |>
+        summarise(
+            across(
+                c(null_magnitude, nonnull_magnitude),
+                \(x) mean(x, na.rm = TRUE)
+            ),
+            .by = c(method, notion, dataset_id, n)
+        ) |>
+        mutate(
+            power_mass = nonnull_magnitude / (null_magnitude + nonnull_magnitude),
+            power_mass = if_else(is.finite(power_mass), power_mass, NA_real_)
+        )
+
+    method_order <- cells |>
+        summarise(overall = mean(power_mass, na.rm = TRUE), .by = method) |>
+        arrange(desc(overall)) |>
+        pull(method)
+    cells <- mutate(cells, method = factor(method, levels = method_order))
+
+    title_n <- if (is.null(sample_size)) "" else glue(" [n = {sample_size}]")
+    ggplot(cells, aes(method, reorder(dataset_id, power_mass, na.rm = TRUE))) +
+        geom_vline(
+            xintercept = 0.5, linetype = "dashed", color = axiom_palette$grid
+        ) +
+        geom_tile(aes(fill = power_mass), size = 2, alpha = 0.85) +
+        facet_wrap(~notion) +
+        scale_fill_scico(
+            palette = "oslo", midpoint = 0.9, na.value = axiom_palette$grid
+        ) +
+        labs(
+            fill = expression(
+                frac(
+                    sum(abs(varphi[j]), j %notin% plain(Null)),
+                    sum(abs(varphi[j]), j)
+                )
+            ),
+            y = NULL, x = NULL,
+            title = glue("Mass placed on relevant features{title_n}")
+        ) +
+        theme(
+            panel.grid.major.y = element_blank(),
+            axis.text.x = element_text(size = 12, angle = 90, hjust = 1),
+            axis.text.y = element_text(size = 12),
+            plot.title = element_text(size = 14),
+            strip.text = element_text(size = 14),
+            legend.title = element_text(size = 12)
         )
 }
 

@@ -1,6 +1,7 @@
 # Visualize relationship between synthetic data explanations
 #
-# These are helper functions used in case_studies/sweep_tabular/visualize.qmd.
+# These are helper functions shared by case_studies/sweep_tabular/visualize.qmd
+# and case_studies/tcga_brca/visualize_importance.R.
 
 library(tidyverse)
 library(glue)
@@ -94,6 +95,89 @@ importance_matrix <- function(
         pivot_wider(names_from = method, values_from = importance) |>
         column_to_rownames("feature")
 }
+
+# Method-profile PCA -----------------------------------------------------
+
+#' Sample size used in the result filenames, read back from the sweep's output.
+#' @param results_dir results directory
+#' @param dataset dataset name
+#' @param response_type "classification" or "regression"
+sweep_sample_size <- function(results_dir, dataset, response_type) {
+    stems <- path_file(dir_ls(results_dir, glob = glue("*_{response_type}_*.csv")))
+    sizes <- str_match(stems, glue("^{dataset}_([0-9]+)_{response_type}_"))[, 2]
+    unique(na.omit(sizes)) |> as.numeric()
+}
+
+#' Whether a vector has an estimable, nonzero variance.
+has_nonzero_variance <- function(x) {
+    x <- x[is.finite(x)]
+    length(x) > 1 && var(x) > 0
+}
+
+#' Average each method's importance profile over seeds.
+#'
+#' Returns the same shape `importance_pca()` expects: features in rows and
+#' methods in columns. Constant features and method profiles are removed
+#' because they cannot be standardized or correlated.
+#'
+#' @param dataset dataset name
+#' @param n sample size
+#' @param response_type "classification" or "regression"
+#' @param seeds seeds to average over
+#' @param methods method names
+#' @param results_dir results directory
+load_importance_data <- function(dataset, n, response_type, seeds, methods, results_dir) {
+    mats <- map(
+        seeds,
+        \(seed) importance_matrix(
+            dataset, n, response_type, seed, methods, results_dir
+        )
+    )
+    features <- rownames(mats[[1]])
+    averaged <- reduce(map(mats, as.matrix), `+`) / length(mats)
+
+    keep_cols <- apply(averaged, 2, has_nonzero_variance)
+    mat <- averaged[, keep_cols, drop = FALSE]
+    keep_features <- apply(mat, 1, has_nonzero_variance)
+
+    imp <- as_tibble(averaged, rownames = "feature") |>
+        filter(keep_features)
+    list(
+        importance = imp,
+        mat = mat[keep_features, , drop = FALSE],
+        method_cols = colnames(mat),
+        features = features[keep_features]
+    )
+}
+
+#' Fit PCA with methods as observations and features as variables.
+#' @param mat features x methods importance matrix
+#' @param normalize_mass if TRUE, express each method's profile as its
+#'   fraction of total absolute importance mass; if FALSE, z-score each
+#'   method profile across features
+importance_pca <- function(mat, normalize_mass = TRUE) {
+    if (normalize_mass) {
+        total_mass <- colSums(abs(mat), na.rm = TRUE)
+        mat_pca <- sweep(abs(mat), 2, total_mass, `/`)
+    } else {
+        mat_pca <- scale(mat)
+    }
+    mat_pca[!is.finite(mat_pca)] <- 0
+
+    pca_input <- t(mat_pca)
+    attr(pca_input, "scaled:center") <- NULL
+    attr(pca_input, "scaled:scale") <- NULL
+    prcomp(pca_input, center = FALSE, scale. = FALSE)
+}
+
+#' Strip the omic-block prefix from a feature name.
+strip_prefix <- \(x) str_remove(x, "^(mrna|mirna|protein)__")
+
+#' Extract the omic block from a feature name.
+parse_omic <- \(x) str_extract(x, "^[^_]+")
+
+#' Omic block color scale
+omic_colors <- c(mrna = "#2b8cbe", mirna = "#e34a33", protein = "#31a354")
 
 #' Multiple Factor Analysis of importance profiles, blocked by sample size.
 #'

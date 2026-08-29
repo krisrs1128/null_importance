@@ -31,68 +31,9 @@ categories <- tibble(method = names(cfg$categories), category = cfg$categories) 
 theme_set(theme_bw(base_size = 10))
 
 # --- Helpers -----------------------------------------------------------------
-
-strip_prefix <- \(x) str_remove(x, "^(mrna|mirna|protein)__")
-parse_omic <- \(x) str_extract(x, "^[^_]+")
-omic_colors <- c(mrna = "#2b8cbe", mirna = "#e34a33", protein = "#31a354")
-
-#' Sample size used in the result filenames, read back from the sweep's output.
-sweep_sample_size <- function() {
-    stems <- path_file(dir_ls(res, glob = glue("*_{cfg$response_type}_*.csv")))
-    sizes <- str_match(stems, glue("^{cfg$dataset}_([0-9]+)_{cfg$response_type}_"))[, 2]
-    unique(na.omit(sizes)) |> as.numeric()
-}
-
-#' Whether a vector has an estimable, nonzero variance.
-has_nonzero_variance <- function(x) {
-    x <- x[is.finite(x)]
-    length(x) > 1 && var(x) > 0
-}
-
-#' Average each method's importance profile over seeds.
-#'
-#' Returns the same shape `pca_plot()` and `corr_plot()` expect: features in
-#' rows and methods in columns. Constant features and method profiles are
-#' removed because they cannot be standardized or correlated.
-load_importance_data <- function(n) {
-    mats <- map(
-        cfg$seeds,
-        \(seed) importance_matrix(
-            cfg$dataset, n, cfg$response_type, seed, methods, res
-        )
-    )
-    features <- rownames(mats[[1]])
-    averaged <- reduce(map(mats, as.matrix), `+`) / length(mats)
-
-    keep_cols <- apply(averaged, 2, has_nonzero_variance)
-    mat <- averaged[, keep_cols, drop = FALSE]
-    keep_features <- apply(mat, 1, has_nonzero_variance)
-
-    imp <- as_tibble(averaged, rownames = "feature") |>
-        filter(keep_features)
-    list(
-        importance = imp,
-        mat = mat[keep_features, , drop = FALSE],
-        method_cols = colnames(mat),
-        features = features[keep_features]
-    )
-}
-
-# Fit PCA with methods as observations and features as variables
-importance_pca <- function(mat, normalize_mass = TRUE) {
-    if (normalize_mass) {
-        total_mass <- colSums(abs(mat), na.rm = TRUE)
-        mat_pca <- sweep(abs(mat), 2, total_mass, `/`)
-    } else {
-        mat_pca <- scale(mat)
-    }
-    mat_pca[!is.finite(mat_pca)] <- 0
-
-    pca_input <- t(mat_pca)
-    attr(pca_input, "scaled:center") <- NULL
-    attr(pca_input, "scaled:scale") <- NULL
-    prcomp(pca_input, center = FALSE, scale. = FALSE)
-}
+# strip_prefix, parse_omic, omic_colors, sweep_sample_size,
+# has_nonzero_variance, load_importance_data, and importance_pca live in
+# importance_visualize_helpers.R since they're shared with pc1_diagnostics.R.
 
 # PCA of method importance profiles
 pca_plot <- function(mat, normalize_mass = TRUE) {
@@ -101,10 +42,10 @@ pca_plot <- function(mat, normalize_mass = TRUE) {
     ve <- summary(pca)$importance[2, 1:2] * 100
 
     ggplot(pca_df, aes(PC1, PC2, label = method)) +
-        geom_point(size = 3) +
+        geom_point(size = 3, color = "#767575") +
         geom_text_repel(size = 3, max.overlaps = 20) +
         labs(
-            title = "PCA of TCGA Importances",
+            title = "Method scores",
             x = glue("PC1 ({round(ve[1], 1)}%)"),
             y = glue("PC2 ({round(ve[2], 1)}%)")
         )
@@ -112,7 +53,7 @@ pca_plot <- function(mat, normalize_mass = TRUE) {
 
 # Largest feature loadings for the first two principal components
 pca_loadings_plot <- function(
-    mat, n_features = 100, normalize_mass = TRUE
+    mat, n_features = 50, normalize_mass = TRUE
 ) {
     pca <- importance_pca(mat, normalize_mass)
     ve <- summary(pca)$importance[2, 1:2] * 100
@@ -132,7 +73,7 @@ pca_loadings_plot <- function(
             dim = recode(dim, !!!dim_labels),
             omic = parse_omic(feature),
             feature_ordered = reorder_within(
-                strip_prefix(feature), loading, dim
+                str_to_lower(strip_prefix(feature)), loading, dim
             ),
             sign = if_else(loading >= 0, "positive", "negative")
         )
@@ -142,23 +83,34 @@ pca_loadings_plot <- function(
             aes(size = abs(loading), fill = sign),
             shape = 22, color = "black", stroke = 0.4
         ) +
-        facet_wrap(~dim, nrow = 2, scales = "free_x") +
+        facet_wrap(~dim, ncol = 1, scales = "free_x") +
         scale_x_reordered() +
-        scale_size_area(max_size = 10, name = "|Loading|") +
+        scale_size(range = c(2, 12), name = "|Loading|") +
         scale_fill_manual(
             values = c(positive = "black", negative = "white"),
             name = "Sign"
         ) +
         labs(
-            title = "TCGA Loadings",
-            x = "Feature", y = "Omic"
+            title = "Feature loadings",
+            x = "Feature", y = "Measurement Assay"
         ) +
         theme(
-            axis.text.x = element_text(angle = 90, hjust = 1, size = 5),
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
             panel.background = element_rect(fill = "#cecdcd", color = NA),
             panel.grid.major = element_blank(),
             strip.text = element_text(size = 10)
         )
+}
+
+# PCA scores above two side-by-side panels of their associated loadings
+pca_figure <- function(mat, n_features = 100, normalize_mass = TRUE) {
+    scores <- pca_plot(mat, normalize_mass)
+    loadings <- pca_loadings_plot(mat, n_features, normalize_mass)
+
+    ((scores / loadings) +
+        plot_layout(heights = c(1, 1), guides = "collect") +
+        plot_annotation(title = "PCA of TCGA importances")) &
+        theme(legend.position = "bottom")
 }
 
 # Spearman correlation heatmap with hierarchical clustering
@@ -206,7 +158,7 @@ credit_splitting_plot <- function(importance) {
     ggplot(feat_summary, aes(sage, minshap, color = omic)) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey60") +
         geom_point(size = 0.5) +
-        geom_text_repel(aes(label = label), size = 3, max.overlaps = 20, show.legend = FALSE) +
+        geom_text_repel(aes(label = label), size = 5, max.overlaps = 20, show.legend = FALSE) +
         scale_color_manual(values = omic_colors, name = "Omic") +
         labs(
             x = "SAGE",
@@ -265,37 +217,31 @@ vignette_plot <- function(importance, method_cols, k = 3) {
 # --- Run ---------------------------------------------------------------------
 
 # Load & prepare data
-d <- load_importance_data(sweep_sample_size())
+n <- sweep_sample_size(res, cfg$dataset, cfg$response_type)
+d <- load_importance_data(cfg$dataset, n, cfg$response_type, cfg$seeds, methods, res)
 
-# Figure 1 — PCA bi-plot
+# Figure 1 — PCA scores and feature loadings
 ggsave(
     path(res, "fig_method_pca.pdf"),
-    pca_plot(d$mat, normalize_mass = pca_normalize_mass),
-    width = 5, height = 3.5, dpi=400
+    pca_figure(d$mat, normalize_mass = pca_normalize_mass),
+    width = 8, height = 8
 )
 
-# Figure 2 — PCA feature loadings
-ggsave(
-    path(res, "fig_method_pca_loadings.pdf"),
-    pca_loadings_plot(d$mat, normalize_mass = pca_normalize_mass),
-    width = 9, height = 4
-)
-
-# Figure 3 — Spearman correlation heatmap
+# Figure 2 — Spearman correlation heatmap
 ggsave(
     path(res, "fig_method_corr.pdf"),
     corr_plot(d$mat),
     width = 8, height = 7
 )
 
-# Figure 4 — Vignette panels
+# Figure 3 — Vignette panels
 ggsave(
     path(res, "fig_vignettes.pdf"),
     vignette_plot(d$importance, d$method_cols),
     width = 10, height = 12
 )
 
-# Figure 5 — SAGE vs minSHAP credit-splitting scatter
+# Figure 4 — SAGE vs minSHAP credit-splitting scatter
 ggsave(
     path(res, "fig_credit_splitting.pdf"),
     credit_splitting_plot(d$importance),
