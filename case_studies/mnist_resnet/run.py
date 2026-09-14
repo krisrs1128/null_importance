@@ -8,6 +8,7 @@ from pathlib import Path
 
 import hydra
 import numpy as np
+import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -17,7 +18,7 @@ if str(SRC_DIR) not in sys.path:
 
 import importance
 from local_ttest import local_ttest_scores
-from model import MNISTResNetFlat, case_path
+from model import MNISTResNetFlat, N_PIXELS, case_path
 from reproducibility import capture_run_metadata
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,8 @@ def enabled_methods(cfg: DictConfig) -> list[str]:
         methods.append("marginalminshap")
     if OmegaConf.select(cfg, "integrated_gradients") is not None:
         methods.append("integrated_gradients")
+    if OmegaConf.select(cfg, "gradient_x_input") is not None:
+        methods.append("gradient_x_input")
     if OmegaConf.select(cfg, "saliency") is not None:
         methods.append("saliency")
     if OmegaConf.select(cfg, "local_ttest") is not None:
@@ -136,17 +139,33 @@ def main(cfg: DictConfig) -> None:
         batch_size=int(cfg.model.batch_size),
     )
 
-    attributions = importance.attribute(
-        X=X,
-        sample_meta=sample_meta,
-        background=shap_background,
-        model=model,
-        n_shap_samples=cfg.explain.n_samples,
-        ig_steps=int(cfg.integrated_gradients.n_steps),
-        ig_eps=float(cfg.integrated_gradients.eps),
-        saliency_eps=float(cfg.saliency.eps),
-        seed=seed,
-    )
+    attributions = {}
+    direct_methods = [
+        name
+        for name in methods
+        if name in {
+            "shap",
+            "integrated_gradients",
+            "gradient_x_input",
+            "saliency",
+        }
+    ]
+    if direct_methods:
+        attributions.update(
+            importance.attribute(
+                X=X,
+                sample_meta=sample_meta,
+                background=shap_background,
+                model=model,
+                n_shap_samples=cfg.explain.n_samples,
+                ig_steps=int(cfg.integrated_gradients.n_steps),
+                ig_eps=float(cfg.integrated_gradients.eps),
+                saliency_eps=float(cfg.saliency.eps),
+                seed=seed,
+                methods=direct_methods,
+                gradient_x_input_eps=float(cfg.gradient_x_input.eps),
+            )
+        )
 
     if "marginalminshap" in methods:
         attributions["marginalminshap"] = importance.attribute_marginalminshap(
@@ -156,6 +175,8 @@ def main(cfg: DictConfig) -> None:
             model=model,
             n_orderings=int(cfg.marginalminshap.n_orderings),
             seed=seed,
+            background_eval_size=int(cfg.marginalminshap.background_eval_size),
+            prefix_batch_size=int(cfg.marginalminshap.prefix_batch_size),
         )
 
     if "local_ttest" in methods:
@@ -193,6 +214,17 @@ def main(cfg: DictConfig) -> None:
     importance.attribution_frame(sample_meta, X).to_csv(raw_pixels_path, index=False)
     log.info("Saved %s", raw_pixels_path)
 
+    pixel_map_path = results_dir / "pixel_feature_map.csv"
+    pixels = np.arange(N_PIXELS)
+    pd.DataFrame(
+        {
+            "pixel_index": pixels,
+            "row": pixels // 28,
+            "col": pixels % 28,
+        }
+    ).to_csv(pixel_map_path, index=False)
+    log.info("Saved %s", pixel_map_path)
+
     metadata = build_metadata(
         cfg,
         methods=methods,
@@ -202,6 +234,7 @@ def main(cfg: DictConfig) -> None:
         outputs={
             "attributions": attribution_files,
             "raw_pixels": artifact_path(raw_pixels_path),
+            "pixel_feature_map": artifact_path(pixel_map_path),
         },
         run_metadata=run_metadata,
     )

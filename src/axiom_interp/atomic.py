@@ -85,6 +85,29 @@ class Gradient(AtomicStatistic):
         return f"Gradient(eps={self.eps})"
 
 
+class GradientXInput(AtomicStatistic):
+    """(x_j - x0_j) * df/dx_j evaluated once at x."""
+
+    def __init__(self, baseline: np.ndarray, eps: float = 1e-5):
+        self.baseline = np.asarray(baseline, dtype=float)
+        self.eps = eps
+
+    def compute_all(self, f, intervention, elements, x) -> dict:
+        x = np.asarray(x, dtype=float)
+        if x.shape != self.baseline.shape:
+            raise ValueError(
+                f"Expected baseline shape {x.shape}, got {self.baseline.shape}"
+            )
+        attributions = (x - self.baseline) * _grad(f, x, eps=self.eps)
+        return {j: np.asarray([attributions[j]]) for j in range(len(x))}
+
+    def __repr__(self):
+        return (
+            "GradientXInput("
+            f"baseline={np.round(self.baseline, 4).tolist()}, eps={self.eps})"
+        )
+
+
 class AblationDelta(AtomicStatistic):
     """v(all units) - v(all units except j)
 

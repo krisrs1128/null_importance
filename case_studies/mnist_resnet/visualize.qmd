@@ -33,10 +33,11 @@ theme_set(theme_axiomatic(base_size = 12))
 
 method_labels <- c(
     saliency = "Saliency",
+    gradient_x_input = "Grad x Input",
     integrated_gradients = "Int. Gradients",
-    local_ttest = "Local t-test",
+    #local_ttest = "Local t-test",
     shap = "SHAP",
-    marginalminshap = "minSHAP"
+    marginalminshap = "MinSHAP"
 )
 ```
 
@@ -51,7 +52,7 @@ pixel_map <- read_csv(
 )
 
 # Read attribution files for all methods
-methods_local <- c("shap", "marginalminshap", "integrated_gradients", "saliency", "local_ttest")
+methods_local <- c("shap", "marginalminshap", "integrated_gradients", "gradient_x_input", "saliency")
 read_attributions <- function(method) {
     read_csv(
         importance_dir / glue("{method}_attributions.csv"),

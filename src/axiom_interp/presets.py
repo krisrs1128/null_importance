@@ -8,7 +8,13 @@ axes.
 from .core import Explainer
 from .index import FeatureCoalitions, PathSteps, UnitIndices, SinglePoint
 from .intervention import BaselineMask, MarginalMask, ZeroMask
-from .atomic import MarginalContribution, PathIntegratedGradient, AblationDelta, Gradient
+from .atomic import (
+    AblationDelta,
+    Gradient,
+    GradientXInput,
+    MarginalContribution,
+    PathIntegratedGradient,
+)
 from .aggregate import ShapleyWeights, Min, Mean, Identity
 
 
@@ -68,6 +74,24 @@ def saliency(eps=1e-5) -> Explainer:
         index=SinglePoint(),
         intervention=ZeroMask(),  # unused by the atomic
         atomic=Gradient(eps=eps),
+        aggregator=Identity(),
+    )
+
+
+def gradient_x_input(baseline, eps=1e-5) -> Explainer:
+    """Input-difference-scaled gradient evaluated at the input.
+
+    Args:
+        baseline: reference point used only for the ``x - baseline`` multiplier
+        eps: step size for finite-difference gradient approximation
+
+    Returns:
+        Explainer configured for Gradient x Input
+    """
+    return Explainer(
+        index=SinglePoint(),
+        intervention=BaselineMask(baseline),  # unused by the atomic
+        atomic=GradientXInput(baseline, eps=eps),
         aggregator=Identity(),
     )
 
