@@ -23,13 +23,16 @@ explain:
   target: predicted_label
 
 marginalminshap:
-  # marginal minSHAP: same coalitions/masking as shap, aggregated with min
-  # instead of the Shapley mean. n_orderings kept small relative to shap's
-  # KernelExplainer nsamples since each ordering costs n_pixels+1 model calls.
-  n_orderings: 20
+  # marginal minSHAP: fixed-background IME, aggregated with min.
+  n_orderings: 40
+  background_eval_size: 16
+  prefix_batch_size: 64
 
 integrated_gradients:
   n_steps: 10
+  eps: 0.0001
+
+gradient_x_input:
   eps: 0.0001
 
 saliency:
