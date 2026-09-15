@@ -106,13 +106,33 @@ walk(cfg$sample_sizes, \(sample_size) {
 
 Next we evaluate $\frac{\sum_{j \in \text{Null}}\left|\varphi_{j}\right|}{\sum_{j} \left|\varphi_{j}\right|}$. This can depend on the types of null importance considered.
 
-```{r null-mass}
-#| fig-height: 6
-null_mass_panel(ev$null_mass, sample_size=500) |>
-    save_fig("fig_null_mass_n_500.png", width = 12, height = 6)
+```{r mass}
+#| fig-width: 10
+#| fig-height: 6.25
+walk(c(500, 5000), \(sample_size) {
+    null_mass_panel(ev$null_mass, sample_size = sample_size) |>
+        save_fig(
+            glue("fig_null_mass_n_{sample_size}.png"),
+            width = 10, height = 6.25
+        ) |>
+        print()
+})
+```
 
-null_mass_panel(ev$null_mass, sample_size=5000) |>
-    save_fig("fig_null_mass_n_5000.png", width = 12, height = 6)
+The same numbers transposed: one facet per dataset, notions across, methods
+down, with rows and columns clustered by profile similarity.
+
+```{r mass-by-dataset}
+#| fig-width: 14
+#| fig-height: 7
+walk(c(500, 5000), \(sample_size) {
+    null_mass_by_dataset_panel(ev$null_mass, sample_size = sample_size) |>
+        save_fig(
+            glue("fig_null_mass_by_dataset_n_{sample_size}.png"),
+            width = 14, height = 7
+        ) |>
+        print()
+})
 ```
 
 D7 nicely highlights the difference between SAGE and minSHAP.
@@ -130,6 +150,27 @@ ev$null_mass |>
     mutate(null_mass = null_magnitude / (null_magnitude + nonnull_magnitude)) |>
     arrange(null_mass) |>
     knitr::kable(digits = 3)
+```
+
+## Proportion of importance on null features (classification)
+
+Notice that the datasets that only have regression are missing here.
+
+```{r mass-by-dataset-classification}
+#| fig-width: 14
+#| fig-height: 7
+null_mass_cls <- load_evaluation(evaluation_dir) |>
+    filter_response_type("classification") |>
+    pluck("null_mass")
+
+walk(c(500, 5000), \(sample_size) {
+    null_mass_by_dataset_panel(null_mass_cls, sample_size = sample_size) |>
+        save_fig(
+            glue("fig_null_mass_by_dataset_classification_n_{sample_size}.png"),
+            width = 14, height = 7
+        ) |>
+        print()
+})
 ```
 
 ## Dependence on the level

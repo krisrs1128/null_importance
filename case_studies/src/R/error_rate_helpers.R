@@ -322,23 +322,20 @@ table1_comparison_combined <- function(table1, sample_size = NULL) {
         )
 }
 
-#' Rank methods by the mass they put on null features.
+#' Average null mass for each (method, notion, dataset) combination
 #'
-#'  This part's the null_mass statistic defined in evaluate.py. Zero means the
-#' method respects the notion's null set; one means all of its mass falls on
-#' null features.
+#' We first average over seeds before looking at the proportions.
 #'
 #' @param null_mass Null-mass tibble from `load_evaluation`.
 #' @param sample_size If given, restrict to this `n` rather than averaging over
 #'   every sample size.
-#' @return A ggplot, one point per dataset, faceted by notion.
-null_mass_panel <- function(null_mass, sample_size = NULL) {
+#' @return A tibble with `method`, `notion`, `dataset_id`, `n`, `null_mass`.
+null_mass_cells <- function(null_mass, sample_size = NULL) {
     if (!is.null(sample_size)) {
         null_mass <- filter(null_mass, n == sample_size)
     }
 
-    # extract null mass values
-    cells <- null_mass |>
+    null_mass |>
         summarise(
             across(
                 c(null_magnitude, nonnull_magnitude),
@@ -350,6 +347,20 @@ null_mass_panel <- function(null_mass, sample_size = NULL) {
             null_mass = null_magnitude / (null_magnitude + nonnull_magnitude),
             null_mass = if_else(is.finite(null_mass), null_mass, NA_real_)
         )
+}
+
+#' Proportion of importance assigned to null features
+#'
+#' Depending on which features are considered null according to a given null
+#' notion, we compute the proportion of mass that is assigned to those null
+#' sets. The actual null fractions are computed in evaluate.py.
+#'
+#' @param null_mass Null-mass tibble from `load_evaluation`.
+#' @param sample_size If given, restrict to this `n` rather than averaging over
+#'   every sample size.
+#' @return A ggplot, one point per dataset, faceted by notion.
+null_mass_panel <- function(null_mass, sample_size = NULL) {
+    cells <- null_mass_cells(null_mass, sample_size)
 
     # sort methods from best to worst
     method_order <- cells |>
@@ -367,16 +378,98 @@ null_mass_panel <- function(null_mass, sample_size = NULL) {
         geom_tile(aes(fill = null_mass), size = 2, alpha = 0.85) +
         facet_wrap(~notion) +
         scale_fill_scico(
-            palette = "berlin", midpoint = 0.2, na.value = axiom_palette$grid
+            palette = "berlin",
+            na.value = axiom_palette$grid
         ) +
         labs(
-            fill = "fraction of |phi| mass on null features",
+            fill = expression(
+                frac(
+                    sum(abs(varphi[j]), j %in% plain(Null)),
+                    sum(abs(varphi[j]), j)
+                )
+            ),
             y = NULL, x = NULL,
-            title = glue("Mass placed on null features{title_n}")
+            title = glue("Relative importance of null features{title_n}")
         ) +
         theme(
             panel.grid.major.y = element_blank(),
-            axis.text.x = element_text(angle = 90, hjust = 1)
+            axis.text.x = element_text(size = 12, angle = 90, hjust = 1),
+            axis.text.y = element_text(size = 12),
+            plot.title = element_text(size = 14),
+            strip.text = element_text(size = 14),
+            legend.title = element_text(size = 12)
+        )
+}
+
+#' Order levels by profile similarity
+#'
+#' We use hierarchical clustering to sort the null mass figure's rows and
+#' columns.
+#'
+#' @param cells Tibble with one row per cell, from `null_mass_cells()`.
+#' @param key Name of the column whose levels are being ordered.
+#' @param profile Names of the columns defining each level's profile.
+#' @param value Name of the column holding the cell value.
+#' @return A character vector of levels in clustered order.
+similarity_order <- function(cells, key, profile, value = "null_mass") {
+    wide <- cells |>
+        summarise(
+            value = mean(.data[[value]], na.rm = TRUE),
+            .by = all_of(c(key, profile))
+        ) |>
+        unite("profile", all_of(profile)) |>
+        pivot_wider(names_from = profile, values_from = value) |>
+        mutate(across(-all_of(key), \(x) replace_na(x, 0)))
+
+    profile_matrix <- as.matrix(select(wide, -all_of(key)))
+    rownames(profile_matrix) <- as.character(wide[[key]])
+    hc <- hclust(dist(profile_matrix), method = "ward.D2")
+    rownames(profile_matrix)[hc$order]
+}
+
+#' Faceted version of null mass figure
+#'
+#' @param null_mass Null-mass tibble from `load_evaluation`.
+#' @param sample_size If given, restrict to this `n`.
+#' @return A ggplot faceted by dataset2
+null_mass_by_dataset_panel <- function(null_mass, sample_size = NULL) {
+    cells <- null_mass_cells(null_mass, sample_size)
+
+    method_order <- similarity_order(cells, "method", c("dataset_id", "notion"))
+    notion_order <- similarity_order(cells, "notion", c("dataset_id", "method"))
+    cells <- cells |>
+        mutate(
+            method = factor(method, levels = method_order),
+            notion = factor(notion, levels = notion_order)
+        )
+
+    title_n <- if (is.null(sample_size)) "" else glue(" [n = {sample_size}]")
+    ggplot(cells, aes(notion, method)) +
+        geom_tile(aes(fill = null_mass), alpha = 0.85) +
+        facet_wrap(~dataset_id, nrow = 2) +
+        scale_fill_scico(
+            palette = "berlin", midpoint = 0.2, # midpoint = 0.2, limits = c(0, 1),
+            na.value = axiom_palette$grid
+        ) +
+        labs(
+            fill = expression(
+                frac(
+                    sum(abs(varphi[j]), j %in% plain(Null)),
+                    sum(abs(varphi[j]), j)
+                )
+            ),
+            x = NULL, y = NULL,
+            title = glue(
+                "Relative importance of null features, by dataset{title_n}"
+            )
+        ) +
+        theme(
+            panel.grid.major = element_blank(),
+            axis.text.x = element_text(size = 10, angle = 90, hjust = 1),
+            axis.text.y = element_text(size = 10),
+            plot.title = element_text(size = 14),
+            strip.text = element_text(size = 13),
+            legend.title = element_text(size = 12)
         )
 }
 

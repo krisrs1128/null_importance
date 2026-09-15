@@ -31,68 +31,9 @@ categories <- tibble(method = names(cfg$categories), category = cfg$categories) 
 theme_set(theme_bw(base_size = 10))
 
 # --- Helpers -----------------------------------------------------------------
-
-strip_prefix <- \(x) str_remove(x, "^(mrna|mirna|protein)__")
-parse_omic <- \(x) str_extract(x, "^[^_]+")
-omic_colors <- c(mrna = "#2b8cbe", mirna = "#e34a33", protein = "#31a354")
-
-#' Sample size used in the result filenames, read back from the sweep's output.
-sweep_sample_size <- function() {
-    stems <- path_file(dir_ls(res, glob = glue("*_{cfg$response_type}_*.csv")))
-    sizes <- str_match(stems, glue("^{cfg$dataset}_([0-9]+)_{cfg$response_type}_"))[, 2]
-    unique(na.omit(sizes)) |> as.numeric()
-}
-
-#' Whether a vector has an estimable, nonzero variance.
-has_nonzero_variance <- function(x) {
-    x <- x[is.finite(x)]
-    length(x) > 1 && var(x) > 0
-}
-
-#' Average each method's importance profile over seeds.
-#'
-#' Returns the same shape `pca_plot()` and `corr_plot()` expect: features in
-#' rows and methods in columns. Constant features and method profiles are
-#' removed because they cannot be standardized or correlated.
-load_importance_data <- function(n) {
-    mats <- map(
-        cfg$seeds,
-        \(seed) importance_matrix(
-            cfg$dataset, n, cfg$response_type, seed, methods, res
-        )
-    )
-    features <- rownames(mats[[1]])
-    averaged <- reduce(map(mats, as.matrix), `+`) / length(mats)
-
-    keep_cols <- apply(averaged, 2, has_nonzero_variance)
-    mat <- averaged[, keep_cols, drop = FALSE]
-    keep_features <- apply(mat, 1, has_nonzero_variance)
-
-    imp <- as_tibble(averaged, rownames = "feature") |>
-        filter(keep_features)
-    list(
-        importance = imp,
-        mat = mat[keep_features, , drop = FALSE],
-        method_cols = colnames(mat),
-        features = features[keep_features]
-    )
-}
-
-# Fit PCA with methods as observations and features as variables
-importance_pca <- function(mat, normalize_mass = TRUE) {
-    if (normalize_mass) {
-        total_mass <- colSums(abs(mat), na.rm = TRUE)
-        mat_pca <- sweep(abs(mat), 2, total_mass, `/`)
-    } else {
-        mat_pca <- scale(mat)
-    }
-    mat_pca[!is.finite(mat_pca)] <- 0
-
-    pca_input <- t(mat_pca)
-    attr(pca_input, "scaled:center") <- NULL
-    attr(pca_input, "scaled:scale") <- NULL
-    prcomp(pca_input, center = FALSE, scale. = FALSE)
-}
+# strip_prefix, parse_omic, omic_colors, sweep_sample_size,
+# has_nonzero_variance, load_importance_data, and importance_pca live in
+# importance_visualize_helpers.R since they're shared with pc1_diagnostics.R.
 
 # PCA of method importance profiles
 pca_plot <- function(mat, normalize_mass = TRUE) {
@@ -101,10 +42,10 @@ pca_plot <- function(mat, normalize_mass = TRUE) {
     ve <- summary(pca)$importance[2, 1:2] * 100
 
     ggplot(pca_df, aes(PC1, PC2, label = method)) +
-        geom_point(size = 3) +
+        geom_point(size = 3, color = "#767575") +
         geom_text_repel(size = 3, max.overlaps = 20) +
         labs(
-            title = "PCA of TCGA Importances",
+            title = "(a) Method scores",
             x = glue("PC1 ({round(ve[1], 1)}%)"),
             y = glue("PC2 ({round(ve[2], 1)}%)")
         )
@@ -112,7 +53,7 @@ pca_plot <- function(mat, normalize_mass = TRUE) {
 
 # Largest feature loadings for the first two principal components
 pca_loadings_plot <- function(
-    mat, n_features = 100, normalize_mass = TRUE
+    mat, n_features = 50, normalize_mass = TRUE
 ) {
     pca <- importance_pca(mat, normalize_mass)
     ve <- summary(pca)$importance[2, 1:2] * 100
@@ -132,7 +73,7 @@ pca_loadings_plot <- function(
             dim = recode(dim, !!!dim_labels),
             omic = parse_omic(feature),
             feature_ordered = reorder_within(
-                strip_prefix(feature), loading, dim
+                str_to_lower(strip_prefix(feature)), loading, dim
             ),
             sign = if_else(loading >= 0, "positive", "negative")
         )
@@ -142,23 +83,33 @@ pca_loadings_plot <- function(
             aes(size = abs(loading), fill = sign),
             shape = 22, color = "black", stroke = 0.4
         ) +
-        facet_wrap(~dim, nrow = 2, scales = "free_x") +
+        facet_wrap(~dim, ncol = 1, scales = "free_x") +
         scale_x_reordered() +
-        scale_size_area(max_size = 10, name = "|Loading|") +
+        scale_size(range = c(2, 12), name = "|Loading|") +
         scale_fill_manual(
             values = c(positive = "black", negative = "white"),
             name = "Sign"
         ) +
         labs(
-            title = "TCGA Loadings",
-            x = "Feature", y = "Omic"
+            title = "(b) Feature loadings",
+            x = "Feature", y = "Measurement Assay"
         ) +
         theme(
-            axis.text.x = element_text(angle = 90, hjust = 1, size = 5),
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
             panel.background = element_rect(fill = "#cecdcd", color = NA),
             panel.grid.major = element_blank(),
             strip.text = element_text(size = 10)
         )
+}
+
+# PCA scores above two side-by-side panels of their associated loadings
+pca_figure <- function(mat, n_features = 100, normalize_mass = TRUE) {
+    scores <- pca_plot(mat, normalize_mass)
+    loadings <- pca_loadings_plot(mat, n_features, normalize_mass)
+
+    ((scores / loadings) +
+        plot_layout(heights = c(1, 1), guides = "collect")) &
+        theme(legend.position = "bottom")
 }
 
 # Spearman correlation heatmap with hierarchical clustering
@@ -206,7 +157,7 @@ credit_splitting_plot <- function(importance) {
     ggplot(feat_summary, aes(sage, minshap, color = omic)) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey60") +
         geom_point(size = 0.5) +
-        geom_text_repel(aes(label = label), size = 3, max.overlaps = 20, show.legend = FALSE) +
+        geom_text_repel(aes(label = label), size = 5, max.overlaps = 20, show.legend = FALSE) +
         scale_color_manual(values = omic_colors, name = "Omic") +
         labs(
             x = "SAGE",
@@ -229,73 +180,137 @@ normalize_importance_mass <- function(importance, method_cols) {
         )
 }
 
-# Build one vignette panel: importance-mass bar chart + PDP line plot
-vignette_panel <- function(feat, importance_mass, vignette_pdp) {
+# ICE plot for the TCGA example with predictions overlaid
+vignette_line_panel <- function(
+    feat, vignette_pdp, vignette_ice, vignette_predictions, class_labels,
+    show_y_title = FALSE
+) {
+    pdp_sub <- vignette_pdp |> filter(feature == feat)
+    ice_sub <- vignette_ice |> filter(feature == feat)
+    prediction_sub <- vignette_predictions |>
+        filter(feature == feat) |>
+        mutate(
+            actual_class = factor(
+                actual_class, levels = 0:1, labels = class_labels
+            )
+        )
+
+    ggplot() +
+        geom_line(
+            data = ice_sub,
+            aes(grid_value, ice_value, group = sample_index),
+            color = "grey40", alpha = 0.10, linewidth = 0.15
+        ) +
+        geom_line(
+            data = pdp_sub,
+            aes(grid_value, pdp_value),
+            color = "black", linewidth = 0.8
+        ) +
+        geom_point(
+            data = prediction_sub,
+            aes(feature_value, prediction, color = actual_class),
+            alpha = 0.55, size = 0.8
+        ) +
+        geom_jitter(
+            data = prediction_sub,
+            aes(feature_value, predicted_class, color = actual_class),
+            width = 0, height = 0.025, alpha = 0.45, size = 0.8
+        ) +
+        scale_color_manual(
+            values = c("#0072B2", "#D55E00"), name = "Actual class",
+            drop = FALSE,
+            guide = guide_legend(override.aes = list(size = 4))
+        ) +
+        scale_y_continuous(
+            limits = c(-0.05, 1.05), breaks = c(0, 0.5, 1),
+            name = if (show_y_title) "Prediction probability" else NULL
+        ) +
+        labs(x = "Feature value", title = strip_prefix(feat)) +
+        theme(plot.title = element_text(hjust = 0.5))
+}
+
+vignette_bar_panel <- function(feat, importance_mass) {
     feat_scores <- importance_mass |>
         filter(feature == feat) |>
         mutate(method = fct_reorder(method, mass))
 
-    p_bar <- ggplot(feat_scores, aes(mass, method)) +
+    ggplot(feat_scores, aes(mass, method)) +
         geom_col() +
         scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
-        labs(
-            x = "Fraction of total |importance| mass", y = NULL,
-            title = strip_prefix(feat)
-        )
-
-    pdp_sub <- vignette_pdp |> filter(feature == feat)
-    p_pdp <- ggplot(pdp_sub, aes(grid_value, pdp_value)) +
-        geom_line(linewidth = 1) +
-        labs(x = strip_prefix(feat), y = "Partial dependence")
-
-    p_bar | p_pdp
+        labs(x = "Fraction of absolute importances", y = NULL) +
+        theme(axis.text.y = element_text(size = 12))
 }
 
-# Full vignette figure: top-k features as stacked panels
-vignette_plot <- function(importance, method_cols, k = 3) {
+# Combine the per-gene ice plots into the final case study gene-level figure.
+vignette_plot <- function(
+    importance, mat, method_cols, k = 3, normalize_mass = TRUE
+) {
     importance_mass <- normalize_importance_mass(importance, method_cols)
-    vp <- read_csv(path(res, "vignette_pdp.csv"), show_col_types = FALSE) |>
-        filter(feature %in% importance_mass$feature)
-    top_feats <- head(unique(vp$feature), k)
+    top_feats <- importance_pca(mat, normalize_mass)$rotation[, "PC2"] |>
+        enframe(name = "feature", value = "loading") |>
+        slice_max(abs(loading), n = k, with_ties = FALSE) |>
+        pull(feature)
 
-    panels <- map(top_feats, \(f) vignette_panel(f, importance_mass, vp))
-    wrap_plots(panels, ncol = 1)
+    vp <- read_csv(path(res, "vignette_pdp.csv"), show_col_types = FALSE) |>
+        filter(feature %in% top_feats)
+    ice <- read_csv(path(res, "vignette_ice.csv"), show_col_types = FALSE) |>
+        filter(feature %in% top_feats)
+    predictions <- read_csv(
+        path(res, "vignette_predictions.csv"), show_col_types = FALSE
+    ) |>
+        filter(feature %in% top_feats)
+    class_labels <- cfg$outcome$classes
+
+    line_panels <- map2(
+        top_feats, seq_along(top_feats),
+        \(f, i) vignette_line_panel(
+            f, vp, ice, predictions, class_labels, show_y_title = i == 1
+        )
+    )
+    bar_panels <- map(top_feats, \(f) vignette_bar_panel(f, importance_mass))
+
+    wrap_plots(c(line_panels, bar_panels), ncol = k) +
+        plot_layout(guides = "collect") &
+        theme(
+            legend.position = "bottom",
+            plot.title = element_text(size = 14, face = "bold"),
+            axis.title = element_text(size = 11),
+            legend.title = element_text(size = 12),
+            legend.text = element_text(size = 11)
+        )
 }
 
 # --- Run ---------------------------------------------------------------------
 
 # Load & prepare data
-d <- load_importance_data(sweep_sample_size())
+n <- sweep_sample_size(res, cfg$dataset, cfg$response_type)
+d <- load_importance_data(cfg$dataset, n, cfg$response_type, cfg$seeds, methods, res)
 
-# Figure 1 — PCA bi-plot
+# Figure 1 — PCA scores and feature loadings
 ggsave(
     path(res, "fig_method_pca.pdf"),
-    pca_plot(d$mat, normalize_mass = pca_normalize_mass),
-    width = 5, height = 3.5, dpi=400
+    pca_figure(d$mat, normalize_mass = pca_normalize_mass),
+    width = 8, height = 8
 )
 
-# Figure 2 — PCA feature loadings
-ggsave(
-    path(res, "fig_method_pca_loadings.pdf"),
-    pca_loadings_plot(d$mat, normalize_mass = pca_normalize_mass),
-    width = 9, height = 4
-)
-
-# Figure 3 — Spearman correlation heatmap
+# Figure 2 — Spearman correlation heatmap
 ggsave(
     path(res, "fig_method_corr.pdf"),
     corr_plot(d$mat),
     width = 8, height = 7
 )
 
-# Figure 4 — Vignette panels
+# Figure 3 — Vignette panels
 ggsave(
     path(res, "fig_vignettes.pdf"),
-    vignette_plot(d$importance, d$method_cols),
-    width = 10, height = 12
+    vignette_plot(
+        d$importance, d$mat, d$method_cols,
+        normalize_mass = pca_normalize_mass
+    ),
+    width = 12, height = 7
 )
 
-# Figure 5 — SAGE vs minSHAP credit-splitting scatter
+# Figure 4 — SAGE vs minSHAP credit-splitting scatter
 ggsave(
     path(res, "fig_credit_splitting.pdf"),
     credit_splitting_plot(d$importance),

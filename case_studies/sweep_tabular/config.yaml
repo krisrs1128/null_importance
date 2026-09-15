@@ -52,19 +52,19 @@ categories:
   correlation: [marginal]
   permutation: [risk]
   minshap: [conditional, risk]
-  sage: [marginal]
+  sage: [risk]
   knockoffs: [conditional]
-  pdp_variance: [marginal, functional]
+  pdp_variance: [functional]
   integrated_gradients: [functional]
-  gcm: [conditional, functional]
-  lasso: [marginal, conditional, risk]
-  loco: [conditional, risk]
+  gcm: [conditional]
+  lasso: [conditional]
+  loco: [risk]
   mdi: [marginal]
 
 # we don't have a permutation-importance row
 theoretical_rows:
   correlation: correlation
-  permutation: null
+  permutation: permutation
   minshap: minshap
   sage: risk_shapley
   knockoffs: knockoffs
@@ -249,4 +249,6 @@ integrated_gradients:
   eps: 1e-5
 
 gcm:
-  n_estimators: 100
+  # We have to split the data when computing the GCM statistic. This is the
+  # proportion that goes to the test samples.
+  test_size: 0.5

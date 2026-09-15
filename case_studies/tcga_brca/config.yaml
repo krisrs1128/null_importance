@@ -124,8 +124,9 @@ integrated_gradients:
   eps: 1e-5
 
 gcm:
-  n_estimators: 100
+  # GCM has to split data to estimate holdout risk
+  test_size: 0.5
 
-# Features shown in vignettes.py
+# Highest-|PC2-loading| features for which vignettes.py prepares plot data
 vignettes:
   n_features: 100
