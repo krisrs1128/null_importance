@@ -6,9 +6,7 @@ import pandas as pd
 import shap
 import knockpy
 from axiom_interp import presets
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LassoCV, LogisticRegressionCV, Ridge
-from sklearn.metrics import matthews_corrcoef as mcc_score
+from sklearn.linear_model import LassoCV, LogisticRegression, LogisticRegressionCV, Ridge
 from sklearn.inspection import permutation_importance as pi
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -19,6 +17,9 @@ import xgboost as xgb
 log = logging.getLogger(__name__)
 
 METHODS = {}
+
+# Clip probabilities so that risks don't blow up.
+PROBABILITY_CLIP = 1e-6
 
 # Most of our explanations are based off of a known data generating process mean
 # function. These two, however, require an actual fitted estimator because they
@@ -38,9 +39,15 @@ def mdi(model, feature_names):
     return pd.Series(model.feature_importances_, index=feature_names, name="mdi")
 
 
+def _neg_log_loss(estimator, X, y):
+    """Negative log probability for classification loss"""
+    probability = estimator.predict_proba(X)[:, 1]
+    return -_loss(np.asarray(y, dtype=float), probability, "classification")
+
+
 @register("permutation")
 def permutation(model, X, y, feature_names, n_repeats, rng, response_type):
-    scoring = "matthews_corrcoef" if response_type == "classification" else "r2"
+    scoring = _neg_log_loss if response_type == "classification" else "r2"
     result = pi(
         model, X, y,
         scoring=scoring,
@@ -60,7 +67,7 @@ def treeshap(model, X, feature_names):
 
 
 @register("loco")
-def loco(X_df, y, feature_names, model, cfg, seed, rng):
+def loco(X_df, y, feature_names, model, cfg, seed, rng, response_type):
     """Leave one covariate out explanations
 
     This implements the risk drop from Definition 2.7, using a configurable
@@ -68,16 +75,18 @@ def loco(X_df, y, feature_names, model, cfg, seed, rng):
     test set.
     """
     X = X_df.to_numpy(dtype=float)
-    y = np.asarray(y, dtype=float)
+    y = np.asarray(y)
     split = _risk_split(len(y), cfg["risk"].get("test_size", 0.3), rng)
     random_state = int(rng.integers(1, 2**31))
 
     everything = tuple(range(X.shape[1]))
-    full_risk = _subset_risk(everything, X, y, cfg["risk"], split, random_state)
+    full_risk = _subset_risk(
+        everything, X, y, cfg["risk"], split, random_state, response_type
+    )
     scores = [
         _subset_risk(
             tuple(k for k in everything if k != j), X, y, cfg["risk"], split,
-            random_state,
+            random_state, response_type,
         ) - full_risk
         for j in everything
     ]
@@ -135,18 +144,25 @@ def knockoff_scores(X_df, y, feature_names, kcfg, rng):
     return result
 
 
-def _fit_predictor(risk_cfg, random_state):
+def _fit_predictor(risk_cfg, random_state, response_type):
     """Estimator drawn from the declared function class F.
 
-    We implement either Ridge Regression or XGBoost to mirror Risk Relevance's
-    (Definition 2.7) dependence on simple vs. rich function classes.
+    We use either linear or xgboost models. This checks whether to use regressor
+    or classifier versions for each type.
     """
     model_class = risk_cfg.get("model_class", "rich")
+    classify = response_type == "classification"
     if model_class == "linear":
-        return Ridge(**risk_cfg.get("linear_params", {}))
+        linear_params = risk_cfg.get("linear_params", {})
+        if classify:
+            return LogisticRegression(
+                C=1.0 / linear_params.get("alpha", 1.0), max_iter=1000
+            )
+        return Ridge(**linear_params)
     if model_class == "rich":
-        return xgb.XGBRegressor(
-            objective="reg:squarederror",
+        estimator = xgb.XGBClassifier if classify else xgb.XGBRegressor
+        return estimator(
+            objective="binary:logistic" if classify else "reg:squarederror",
             random_state=random_state,
             n_jobs=1, # single threading actually faster, less setup/teardown cost
             **risk_cfg.get("model_params", {}),
@@ -156,6 +172,20 @@ def _fit_predictor(risk_cfg, random_state):
     )
 
 
+def _predict(model, X, response_type):
+    if response_type == "classification":
+        return model.predict_proba(X)[:, 1]
+    return model.predict(X)
+
+
+def _loss(y_true, prediction, response_type):
+    """Use either classifier (negative log probability) or MSE loss"""
+    if response_type == "classification":
+        p = np.clip(prediction, PROBABILITY_CLIP, 1 - PROBABILITY_CLIP)
+        return float(-np.mean(y_true * np.log(p) + (1 - y_true) * np.log1p(-p)))
+    return float(np.mean((y_true - prediction) ** 2))
+
+
 def _risk_split(n, test_size, rng):
     """Share train/test splits across coalitions."""
     indices = rng.permutation(n)
@@ -163,22 +193,24 @@ def _risk_split(n, test_size, rng):
     return indices[n_test:], indices[:n_test]
 
 
-def _subset_risk(subset, X, y, risk_cfg, split, random_state):
-    """Held-out squared-error risk of a predictor fit on ``X[:, subset]``."""
+def _subset_risk(subset, X, y, risk_cfg, split, random_state, response_type):
+    """Test set risk of on a subset of features X[:, S]"""
     train, test = split
     if len(subset) == 0:
-        return float(np.mean((y[test] - y[train].mean()) ** 2))
+        baseline = np.full(len(test), y[train].mean())
+        return _loss(y[test], baseline, response_type)
 
     columns = list(subset)
-    model = _fit_predictor(risk_cfg, random_state)
-    model.fit(X[np.ix_(train, columns)], y[train])
-    prediction = model.predict(X[np.ix_(test, columns)])
-    return float(np.mean((y[test] - prediction) ** 2))
+    model = _fit_predictor(risk_cfg, random_state, response_type)
+    target = y[train].astype(int) if response_type == "classification" else y[train]
+    model.fit(X[np.ix_(train, columns)], target)
+    prediction = _predict(model, X[np.ix_(test, columns)], response_type)
+    return _loss(y[test], prediction, response_type)
 
 
-def risk_importance_details(X, y, feature_names, risk_cfg, rng):
+def risk_importance_details(X, y, feature_names, risk_cfg, rng, response_type):
     """Share coalitions in SAGE and minSHAP."""
-    details = _risk_contribution_details(X, y, risk_cfg, rng)
+    details = _risk_contribution_details(X, y, risk_cfg, rng, response_type)
     contributions = details[0]
 
     # we truncate minSHAP below at zero, since theoretically V(j \cup S) > V(S)
@@ -191,20 +223,24 @@ def risk_importance_details(X, y, feature_names, risk_cfg, rng):
 
 
 @register("minshap")
-def minshap_importance(X, y, feature_names, risk_cfg, rng):
+def minshap_importance(X, y, feature_names, risk_cfg, rng, response_type):
     """Risk-based minSHAP (2604.15107, Thm 2)."""
-    minshap, _, _ = risk_importance_details(X, y, feature_names, risk_cfg, rng)
+    minshap, _, _ = risk_importance_details(
+        X, y, feature_names, risk_cfg, rng, response_type
+    )
     return minshap
 
 
 @register("sage")
-def sage_importance(X, y, feature_names, risk_cfg, rng):
+def sage_importance(X, y, feature_names, risk_cfg, rng, response_type):
     """Ordinary risk-based Shapley value ("SAGE")."""
-    _, sage, _ = risk_importance_details(X, y, feature_names, risk_cfg, rng)
+    _, sage, _ = risk_importance_details(
+        X, y, feature_names, risk_cfg, rng, response_type
+    )
     return sage
 
 
-def _risk_contribution_details(X, y, risk_cfg, rng):
+def _risk_contribution_details(X, y, risk_cfg, rng, response_type):
     """Internal helper for risk_contribution_details.
 
     This returns sampled contributions C(j | S) and associated coalitions S. We
@@ -222,7 +258,7 @@ def _risk_contribution_details(X, y, risk_cfg, rng):
         key = tuple(sorted(int(j) for j in subset))
         if key not in risk_cache:
             risk_cache[key] = _subset_risk(
-                key, X, y, risk_cfg, split, random_state=base_seed
+                key, X, y, risk_cfg, split, base_seed, response_type
             )
         return risk_cache[key]
 
@@ -271,39 +307,40 @@ def risk_contribution_frame(details, feature_names):
     return pd.DataFrame(rows)
 
 
-def _gcm_pvalue(x, y, z, seed_x, seed_y, n_estimators):
+def _gcm_pvalue(x, y, z, risk_cfg, split, seed_x, seed_y, response_type):
     """Shah & Peters (2018) GCM test for x _||_ y | z.
 
-    This is adapted from dowhy.gcm.independence_test.generalised_cov_measure but
-    simplified to a fixed RandomForestRegressor.
+    Our code comes from dowhy.gcm.independence_test.generalised_cov_measure.
     """
-    # train models and get two sets of residuals
-    model_x = RandomForestRegressor(n_estimators=n_estimators, random_state=seed_x)
-    model_y = RandomForestRegressor(n_estimators=n_estimators, random_state=seed_y)
-    model_x.fit(z, x)
-    model_y.fit(z, y)
-    resid_x = x - model_x.predict(z)
-    resid_y = y - model_y.predict(z)
+    train, test = split
 
-    # compute test statistic from normalized product of residuals. See Eqn (3)
-    # from the Shah & Peters paper.
+    # All our x's are continuous features
+    model_x = _fit_predictor(risk_cfg, seed_x, "regression")
+    model_x.fit(z[train], x[train])
+    resid_x = x[test] - model_x.predict(z[test])
+
+    model_y = _fit_predictor(risk_cfg, seed_y, response_type)
+    target = y[train].astype(int) if response_type == "classification" else y[train]
+    model_y.fit(z[train], target)
+    resid_y = y[test] - _predict(model_y, z[test], response_type)
+
+    # Eq 3 from Shah and Peters
     products = resid_x * resid_y
     denom = np.std(products)
     if denom == 0:
         return 1.0
-    stat = (np.sum(products) / np.sqrt(len(x))) / denom
+    stat = (np.sum(products) / np.sqrt(len(products))) / denom
     return 2 * _norm.sf(abs(stat))
 
 
 @register("gcm")
-def gcm_importance(X, y, feature_names, gcm_cfg, rng):
+def gcm_importance(X, y, feature_names, gcm_cfg, risk_cfg, rng, response_type):
     """GCM conditional-independence: X_j _||_ Y | X_{-j}.
 
-    We compute -log10(p-value) from the associated test. Larger values are
-    evidence of dependence.
+    -log10(p-value) from the GCM test.
     """
-    n_estimators = gcm_cfg.get("n_estimators", 100)
-    y = np.asarray(y, dtype=float)
+    y = np.asarray(y)
+    split = _risk_split(len(y), gcm_cfg.get("test_size", 0.5), rng)
     scores = np.zeros(X.shape[1])
 
     # feature-by-feature retraining
@@ -311,7 +348,9 @@ def gcm_importance(X, y, feature_names, gcm_cfg, rng):
         z = np.delete(X, j, axis=1)
         seed_x = int(rng.integers(1, 2**31))
         seed_y = int(rng.integers(1, 2**31))
-        p_value = _gcm_pvalue(X[:, j], y, z, seed_x, seed_y, n_estimators)
+        p_value = _gcm_pvalue(
+            X[:, j], y, z, risk_cfg, split, seed_x, seed_y, response_type
+        )
         scores[j] = -np.log10(max(p_value, 1e-300))
 
     return pd.Series(scores, index=feature_names, name="gcm")
