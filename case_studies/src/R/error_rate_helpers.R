@@ -446,11 +446,13 @@ null_mass_by_dataset_panel <- function(null_mass, sample_size = NULL) {
     title_n <- if (is.null(sample_size)) "" else glue(" [n = {sample_size}]")
     ggplot(cells, aes(notion, method)) +
         geom_tile(aes(fill = null_mass), alpha = 0.85) +
-        facet_wrap(~dataset_id, nrow = 2) +
+        facet_wrap(~dataset_id, ncol = 4) +
         scale_fill_scico(
             palette = "berlin", midpoint = 0.2, # midpoint = 0.2, limits = c(0, 1),
             na.value = axiom_palette$grid
         ) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_discrete(expand = c(0, 0)) +
         labs(
             fill = expression(
                 frac(
@@ -460,15 +462,15 @@ null_mass_by_dataset_panel <- function(null_mass, sample_size = NULL) {
             ),
             x = NULL, y = NULL,
             title = glue(
-                "Relative importance of null features, by dataset{title_n}"
+                "Relative importance of null features {title_n}"
             )
         ) +
         theme(
             panel.grid.major = element_blank(),
             axis.text.x = element_text(size = 10, angle = 90, hjust = 1),
-            axis.text.y = element_text(size = 10),
-            plot.title = element_text(size = 14),
-            strip.text = element_text(size = 13),
+            axis.text.y = element_text(size = 8.5),
+            plot.title = element_text(size = 12),
+            strip.text = element_text(size = 12),
             legend.title = element_text(size = 12)
         )
 }

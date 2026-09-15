@@ -337,7 +337,7 @@ mediated_membership_plot <- function(
         filter(!str_detect(coalition_feature, "^noise_([2-9]|[1-9][0-9]+)$")) |>
         ggplot(aes(coalition_feature, ordering_sorted)) +
         geom_tile(
-            aes(fill = factor(included)), color = "white", linewidth = 0.25
+            aes(fill = factor(included), color = factor(included)), linewidth = 0.25
         ) +
         geom_tile(
             data = outline, fill = NA, color = "#bf3600", linewidth = 0.9
@@ -348,17 +348,23 @@ mediated_membership_plot <- function(
             labels = c(`0` = "Absent", `1` = "In S"),
             name = "Coalition"
         ) +
+        scale_color_manual(
+            values = c(`0` = "#f5f5f5", `1` = "#737373"),
+            labels = c(`0` = "Absent", `1` = "In S"),
+            name = "Coalition"
+        ) +
         scale_y_reordered() +
         labs(title = title, x = "Feature", y = "Sampled ordering") +
         theme(
-            axis.text.x = element_text(angle = 90, hjust = 1, size = 10),
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0, size = 9),
             strip.text = element_text(size = 12),
-            legend.text = element_text(size = 12),
-            legend.title = element_text(size = 14),
+            legend.text = element_text(size = 10),
+            legend.title = element_text(size = 12),
+            legend.position = "bottom",
             axis.text.y = element_blank(),
             axis.ticks.y = element_blank(),
-            title.text = element_text(size = 16),
-            axis.title = element_text(size = 14),
+            title.text = element_text(size = 14),
+            axis.title = element_text(size = 12),
             panel.grid = element_blank()
         )
 }
@@ -391,6 +397,7 @@ mediated_bars_plot <- function(bars) {
             axis.ticks.y = element_blank(),
             panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
-            panel.background = element_rect(fill = "#ffffff")
+            panel.background = element_rect(fill = "#ffffff"),
+            legend.position = "bottom"
         )
 }
