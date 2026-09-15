@@ -45,7 +45,7 @@ pca_plot <- function(mat, normalize_mass = TRUE) {
         geom_point(size = 3, color = "#767575") +
         geom_text_repel(size = 3, max.overlaps = 20) +
         labs(
-            title = "Method scores",
+            title = "(a) Method scores",
             x = glue("PC1 ({round(ve[1], 1)}%)"),
             y = glue("PC2 ({round(ve[2], 1)}%)")
         )
@@ -91,7 +91,7 @@ pca_loadings_plot <- function(
             name = "Sign"
         ) +
         labs(
-            title = "Feature loadings",
+            title = "(b) Feature loadings",
             x = "Feature", y = "Measurement Assay"
         ) +
         theme(
@@ -108,8 +108,7 @@ pca_figure <- function(mat, n_features = 100, normalize_mass = TRUE) {
     loadings <- pca_loadings_plot(mat, n_features, normalize_mass)
 
     ((scores / loadings) +
-        plot_layout(heights = c(1, 1), guides = "collect") +
-        plot_annotation(title = "PCA of TCGA importances")) &
+        plot_layout(heights = c(1, 1), guides = "collect")) &
         theme(legend.position = "bottom")
 }
 
@@ -181,37 +180,104 @@ normalize_importance_mass <- function(importance, method_cols) {
         )
 }
 
-# Build one vignette panel: importance-mass bar chart + PDP line plot
-vignette_panel <- function(feat, importance_mass, vignette_pdp) {
+# ICE plot for the TCGA example with predictions overlaid
+vignette_line_panel <- function(
+    feat, vignette_pdp, vignette_ice, vignette_predictions, class_labels,
+    show_y_title = FALSE
+) {
+    pdp_sub <- vignette_pdp |> filter(feature == feat)
+    ice_sub <- vignette_ice |> filter(feature == feat)
+    prediction_sub <- vignette_predictions |>
+        filter(feature == feat) |>
+        mutate(
+            actual_class = factor(
+                actual_class, levels = 0:1, labels = class_labels
+            )
+        )
+
+    ggplot() +
+        geom_line(
+            data = ice_sub,
+            aes(grid_value, ice_value, group = sample_index),
+            color = "grey40", alpha = 0.10, linewidth = 0.15
+        ) +
+        geom_line(
+            data = pdp_sub,
+            aes(grid_value, pdp_value),
+            color = "black", linewidth = 0.8
+        ) +
+        geom_point(
+            data = prediction_sub,
+            aes(feature_value, prediction, color = actual_class),
+            alpha = 0.55, size = 0.8
+        ) +
+        geom_jitter(
+            data = prediction_sub,
+            aes(feature_value, predicted_class, color = actual_class),
+            width = 0, height = 0.025, alpha = 0.45, size = 0.8
+        ) +
+        scale_color_manual(
+            values = c("#0072B2", "#D55E00"), name = "Actual class",
+            drop = FALSE,
+            guide = guide_legend(override.aes = list(size = 4))
+        ) +
+        scale_y_continuous(
+            limits = c(-0.05, 1.05), breaks = c(0, 0.5, 1),
+            name = if (show_y_title) "Prediction probability" else NULL
+        ) +
+        labs(x = "Feature value", title = strip_prefix(feat)) +
+        theme(plot.title = element_text(hjust = 0.5))
+}
+
+vignette_bar_panel <- function(feat, importance_mass) {
     feat_scores <- importance_mass |>
         filter(feature == feat) |>
         mutate(method = fct_reorder(method, mass))
 
-    p_bar <- ggplot(feat_scores, aes(mass, method)) +
+    ggplot(feat_scores, aes(mass, method)) +
         geom_col() +
         scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
-        labs(
-            x = "Fraction of total |importance| mass", y = NULL,
-            title = strip_prefix(feat)
-        )
-
-    pdp_sub <- vignette_pdp |> filter(feature == feat)
-    p_pdp <- ggplot(pdp_sub, aes(grid_value, pdp_value)) +
-        geom_line(linewidth = 1) +
-        labs(x = strip_prefix(feat), y = "Partial dependence")
-
-    p_bar | p_pdp
+        labs(x = "Fraction of absolute importances", y = NULL) +
+        theme(axis.text.y = element_text(size = 12))
 }
 
-# Full vignette figure: top-k features as stacked panels
-vignette_plot <- function(importance, method_cols, k = 3) {
+# Combine the per-gene ice plots into the final case study gene-level figure.
+vignette_plot <- function(
+    importance, mat, method_cols, k = 3, normalize_mass = TRUE
+) {
     importance_mass <- normalize_importance_mass(importance, method_cols)
-    vp <- read_csv(path(res, "vignette_pdp.csv"), show_col_types = FALSE) |>
-        filter(feature %in% importance_mass$feature)
-    top_feats <- head(unique(vp$feature), k)
+    top_feats <- importance_pca(mat, normalize_mass)$rotation[, "PC2"] |>
+        enframe(name = "feature", value = "loading") |>
+        slice_max(abs(loading), n = k, with_ties = FALSE) |>
+        pull(feature)
 
-    panels <- map(top_feats, \(f) vignette_panel(f, importance_mass, vp))
-    wrap_plots(panels, ncol = 1)
+    vp <- read_csv(path(res, "vignette_pdp.csv"), show_col_types = FALSE) |>
+        filter(feature %in% top_feats)
+    ice <- read_csv(path(res, "vignette_ice.csv"), show_col_types = FALSE) |>
+        filter(feature %in% top_feats)
+    predictions <- read_csv(
+        path(res, "vignette_predictions.csv"), show_col_types = FALSE
+    ) |>
+        filter(feature %in% top_feats)
+    class_labels <- cfg$outcome$classes
+
+    line_panels <- map2(
+        top_feats, seq_along(top_feats),
+        \(f, i) vignette_line_panel(
+            f, vp, ice, predictions, class_labels, show_y_title = i == 1
+        )
+    )
+    bar_panels <- map(top_feats, \(f) vignette_bar_panel(f, importance_mass))
+
+    wrap_plots(c(line_panels, bar_panels), ncol = k) +
+        plot_layout(guides = "collect") &
+        theme(
+            legend.position = "bottom",
+            plot.title = element_text(size = 14, face = "bold"),
+            axis.title = element_text(size = 11),
+            legend.title = element_text(size = 12),
+            legend.text = element_text(size = 11)
+        )
 }
 
 # --- Run ---------------------------------------------------------------------
@@ -237,8 +303,11 @@ ggsave(
 # Figure 3 — Vignette panels
 ggsave(
     path(res, "fig_vignettes.pdf"),
-    vignette_plot(d$importance, d$method_cols),
-    width = 10, height = 12
+    vignette_plot(
+        d$importance, d$mat, d$method_cols,
+        normalize_mass = pca_normalize_mass
+    ),
+    width = 12, height = 7
 )
 
 # Figure 4 — SAGE vs minSHAP credit-splitting scatter
