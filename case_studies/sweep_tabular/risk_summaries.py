@@ -25,10 +25,12 @@ from importance import risk_importance_details
 log = logging.getLogger(__name__)
 
 
-def save_risk_summaries(*, results_dir, stem, X, y, feature_names, risk_cfg, rng):
+def save_risk_summaries(
+    *, results_dir, stem, X, y, feature_names, risk_cfg, rng, response_type
+):
     """Save one shared sample of orderings, from which both values are reduced."""
     _, _, contributions = risk_importance_details(
-        X, y, feature_names, risk_cfg, rng
+        X, y, feature_names, risk_cfg, rng, response_type
     )
     output_path = Path(results_dir) / f"{stem}_risk_contributions.csv"
     contributions.to_csv(output_path, index=False)
@@ -67,6 +69,7 @@ def _run_task(
         feature_names=feature_names,
         risk_cfg=risk_cfg,
         rng=rng,
+        response_type=response_type,
     )
 
 
