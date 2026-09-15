@@ -269,67 +269,6 @@ p_div <- ggplot(
     )
 
 p_div
-ggsave(
-    path(fig_dir, "fig_divergence_dependent_features.png"), p_div,
-    width = 7.5, height = 3,
-    dpi = 200
-)
-```
-
-```{r divergence-compute-corr}
-divergence_df_corr <- pmap_dfr(divergence_configs, \(seed, n, response_type) {
-    corr <- load_method_importance(
-        "dependent_features", n, response_type, seed, "correlation",
-        results_dir
-    ) |>
-        rename(correlation = importance)
-    kn <- load_method_importance(
-        "dependent_features", n, response_type, seed, "knockoffs",
-        results_dir
-    ) |>
-        rename(knockoffs = importance)
-
-    corr |>
-        select(feature, correlation) |>
-        left_join(select(kn, feature, knockoffs), by = "feature") |>
-        filter(feature %in% c("x1", "x2")) |>
-        mutate(seed = seed, n = n, response_type = response_type)
-})
-```
-
-```{r fig-divergence-corr, fig.width=7.5, fig.height=3}
-divergence_means_corr <- divergence_df_corr |>
-    group_by(feature, response_type, n) |>
-    summarize(
-        correlation = mean(correlation), knockoffs = mean(knockoffs),
-        .groups = "drop"
-    )
-
-p_div_corr <- ggplot(
-    divergence_df_corr,
-    aes(correlation, knockoffs, color = feature, shape = response_type)
-) +
-    geom_hline(yintercept = 0, color = axiom_palette$grid, linewidth = 1.5) +
-    geom_vline(xintercept = 0, color = axiom_palette$grid, linewidth = 1.5) +
-    geom_point(size = 2, alpha = 0.4) +
-    geom_point(data = divergence_means_corr, size = 3, alpha = 0.8) +
-    facet_wrap(~n, labeller = labeller(n = ~ glue("n = {.x}"))) +
-    scale_color_manual(
-        values = feature_colors, labels = feature_labels, name = NULL
-    ) +
-    scale_shape_manual(values = c(classification = 16, regression = 17)) +
-    labs(
-        title = glue("Correlation vs. knockoffs on dependent_features"),
-        x = "Correlation importance", y = "Knockoffs importance",
-        shape = "Response type"
-    )
-
-p_div_corr
-ggsave(
-    path(fig_dir, "fig_divergence_correlated.png"), p_div_corr,
-    width = 7.5, height = 3,
-    dpi = 200
-)
 ```
 
 # minSHAP mediated-chain diagnostic
@@ -367,20 +306,29 @@ ggsave(
 )
 ```
 
-```{r fig-mediated-contribution-highlight, fig.width=10, fig.height=5}
+Panel A shows the correlation/knockoffs divergence, while panel B shows the
+sampled minSHAP contributions.
+
+```{r fig-divergence-and-minshap, fig.width=10, fig.height=9}
 mediation_highlight <- c("noise_1", "x1", "x3")
 highlight <- mediated_focus_data(
     mediated_membership, mediated_contributions, mediation_highlight
 )
-p_mediated_highlight <- mediated_membership_plot(
+
+p_minshap <- mediated_membership_plot(
     highlight$membership, highlight$outline,
     title = "Coalitions"
-) | mediated_bars_plot(highlight$bars)
-p_mediated_highlight
+) + labs(tag = "B")
+
+p_combined <- (p_div + labs(tag = "A")) /
+    (p_minshap | mediated_bars_plot(highlight$bars)) +
+    plot_layout(heights = c(1, 1.3)) &
+    theme(plot.tag = element_text(face = "bold", size = 14))
+p_combined
 
 ggsave(
-    path(fig_dir, "fig_mediated_chain_contribution_highlight.png"),
-    p_mediated_highlight, width = 10, height = 5,
+    path(fig_dir, "fig_knockoffs_and_minshap.png"), p_combined,
+    width = 10, height = 9,
     dpi = 200
 )
 ```
