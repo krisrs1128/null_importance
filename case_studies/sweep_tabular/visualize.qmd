@@ -262,6 +262,12 @@ p_div <- ggplot(
         values = feature_colors, labels = feature_labels, name = NULL
     ) +
     scale_shape_manual(values = c(classification = 16, regression = 17)) +
+    theme(
+        legend.position = "bottom",
+        legend.box = "vertical",
+        legend.margin = margin(-5, 1, -5, 1),
+        strip.text = element_text(size = 12)
+    ) +
     labs(
         title = glue("Correlation vs. knockoffs on dependent_features"),
         x = "Correlation importance", y = "Knockoffs importance",
@@ -309,7 +315,9 @@ ggsave(
 Panel A shows the correlation/knockoffs divergence, while panel B shows the
 sampled minSHAP contributions.
 
-```{r fig-divergence-and-minshap, fig.width=10, fig.height=9}
+8 6
+```{r fig-divergence-and-minshap, fig.width=5.5, fig.height=7.5}
+theme_set(theme_axiomatic(base_size = 12))
 mediation_highlight <- c("noise_1", "x1", "x3")
 highlight <- mediated_focus_data(
     mediated_membership, mediated_contributions, mediation_highlight
@@ -322,13 +330,13 @@ p_minshap <- mediated_membership_plot(
 
 p_combined <- (p_div + labs(tag = "A")) /
     (p_minshap | mediated_bars_plot(highlight$bars)) +
-    plot_layout(heights = c(1, 1.3)) &
+    plot_layout(heights = c(1, 1.5)) &
     theme(plot.tag = element_text(face = "bold", size = 14))
 p_combined
 
 ggsave(
     path(fig_dir, "fig_knockoffs_and_minshap.png"), p_combined,
-    width = 10, height = 9,
+    width = 5.5, height = 7.5,
     dpi = 200
 )
 ```

@@ -241,7 +241,7 @@ vignette_bar_panel <- function(feat, importance_mass) {
         theme(axis.text.y = element_text(size = 12))
 }
 
-# Combine the per-gene ice plots into the final case study gene-level figure.
+# Stack genes vertically, with ICE curves and importance bars side by side.
 vignette_plot <- function(
     importance, mat, method_cols, k = 3, normalize_mass = TRUE
 ) {
@@ -261,15 +261,15 @@ vignette_plot <- function(
         filter(feature %in% top_feats)
     class_labels <- cfg$outcome$classes
 
-    line_panels <- map2(
-        top_feats, seq_along(top_feats),
-        \(f, i) vignette_line_panel(
-            f, vp, ice, predictions, class_labels, show_y_title = i == 1
-        )
-    )
-    bar_panels <- map(top_feats, \(f) vignette_bar_panel(f, importance_mass))
+    panels <- map(top_feats, \(f) list(
+        vignette_line_panel(
+            f, vp, ice, predictions, class_labels, show_y_title = TRUE
+        ),
+        vignette_bar_panel(f, importance_mass)
+    )) |>
+        list_flatten()
 
-    wrap_plots(c(line_panels, bar_panels), ncol = k) +
+    wrap_plots(panels, ncol = 2, byrow = TRUE) +
         plot_layout(guides = "collect") &
         theme(
             legend.position = "bottom",
@@ -300,14 +300,14 @@ ggsave(
     width = 8, height = 7
 )
 
-# Figure 3 — Vignette panels
+# Figure 3 — Portrait vignette panels (one row per gene)
 ggsave(
     path(res, "fig_vignettes.pdf"),
     vignette_plot(
         d$importance, d$mat, d$method_cols,
         normalize_mass = pca_normalize_mass
     ),
-    width = 12, height = 7
+    width = 6, height = 8
 )
 
 # Figure 4 — SAGE vs minSHAP credit-splitting scatter
