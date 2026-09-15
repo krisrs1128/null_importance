@@ -27,7 +27,7 @@ the explained feature set are identical — `permutation`, `pdp_variance`, and
 `integrated_gradients` all evaluate the model at perturbed designs and would be
 undefined otherwise. The total dimension $d$ also sets the cost of the
 risk-based methods: `minshap` and `sage` fit `risk.n_orderings` $\times\ d$
-models each, and `gcm` retrains two forests per feature, so raising the
+models each, and `gcm` refits two nuisance models per feature, so raising the
 screening thresholds is the main way to make a run expensive.
 
 Unlike the synthetic sweep, the data and the model here are fixed. The `seeds`
@@ -94,10 +94,10 @@ Feature names carry an `mrna__`, `mirna__`, or `protein__` prefix recording
 which block they came from. Some methods give local importances, and we have
 aggregated them by their mean absolute value across samples.
 
-`vignettes.py` writes `vignette_features.csv` (the response and the raw values
-of the features whose importance profiles disagree most across methods) and
-`vignette_pdp.csv` (`feature,grid_value,pdp_value`), which back the per-feature
-panels.
+`vignettes.py` first runs a PCA of the methods x features importance matrix. It
+then saves the ICE (and ICE-related) plot data for the genes and molecular
+features with the largest absolute value of PC2. The outputs are saved into
+`vignette_pdp.csv`, `vignette_ice.csv`, and `vignette_predictions.csv`.
 
 Hydra records the resolved configuration and log of each run under
 `outputs/{date}/{time}/`.
@@ -110,16 +110,12 @@ of a method's total absolute importance mass. Set
 `visualization.pca_normalize_mass: false` in `config.yaml` to instead z-score
 each method profile across features.
 
-- **`fig_method_pca.pdf`:** PCA of the methods, treating each method as a point
-  in feature space. Methods targeting the same notion of null importance should
-  land near each other.
-- **`fig_method_pca_loadings.pdf`:** The 100 largest absolute feature loadings
-  for each of the first two principal components, grouped by omic block.
-- **`fig_method_corr.pdf`:** Spearman rank correlation between methods, with
-  the methods ordered by hierarchical clustering on $1 - \rho$.
-- **`fig_vignettes.pdf`:** For the features where the methods disagree most, the
-  fraction of each method's total absolute importance mass assigned to the
-  feature is shown beside its fitted partial dependence curve.
+- **`fig_method_pca.pdf`:** PCA of the methods, treating each method as a sample
+  and importance method as a feature.
+- **`fig_vignettes.pdf`:** For the three features with the largest absolute PC2
+  loadings in the method-profile PCA, individual conditional expectation curves
+  and their mean partial-dependence curves are shown in the top row, with
+  observed fitted probabilities overlaid.
 - **`fig_credit_splitting.pdf`:** Mean SAGE against mean minSHAP per feature,
   colored by omic. Points below the diagonal are features whose credit SAGE
   splits among correlated copies.
