@@ -6,13 +6,16 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import shap
 from omegaconf import DictConfig
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "src"))
 
 from axiom_interp import presets
+from axiom_interp.streaming import (
+    fixed_background_sample,
+    marginal_minshap_batched,
+)
 from model import (
     MNISTResNetFlat,
     N_PIXELS,
@@ -22,7 +25,6 @@ from model import (
 )
 
 log = logging.getLogger(__name__)
-logging.getLogger("shap").setLevel(logging.WARNING)
 META_COLS = [
     "sample_index",
     "true_label",
@@ -81,34 +83,87 @@ def attribute(
     ig_eps: float,
     saliency_eps: float,
     seed: int,
+    methods: list[str] | None = None,
+    gradient_x_input_eps: float = 1e-5,
 ) -> dict[str, pd.DataFrame]:
     """Adapt case_studies/src/explain.py::attribute to flat MNIST pixels."""
     np.random.seed(seed)
 
-    ig_explainer = presets.integrated_gradients(np.zeros(N_PIXELS), ig_steps, ig_eps)
-    saliency_explainer = presets.saliency(saliency_eps)
+    enabled = (
+        {"shap", "integrated_gradients", "gradient_x_input", "saliency"}
+        if methods is None
+        else set(methods)
+    )
+    shap_module = None
+    if "shap" in enabled:
+        import shap as shap_module
+
+        logging.getLogger("shap").setLevel(logging.WARNING)
+
+    baseline = np.zeros(N_PIXELS)
+    ig_explainer = (
+        presets.integrated_gradients(baseline, ig_steps, ig_eps)
+        if "integrated_gradients" in enabled
+        else None
+    )
+    gradient_x_input_explainer = (
+        presets.gradient_x_input(baseline, gradient_x_input_eps)
+        if "gradient_x_input" in enabled
+        else None
+    )
+    saliency_explainer = (
+        presets.saliency(saliency_eps) if "saliency" in enabled else None
+    )
     functions_by_label = {}
     shap_explainers_by_label = {}
-    scores = {"shap": [], "integrated_gradients": [], "saliency": []}
+    scores = {
+        name: []
+        for name in [
+            "shap",
+            "integrated_gradients",
+            "gradient_x_input",
+            "saliency",
+        ]
+        if name in enabled
+    }
 
     for i, row in sample_meta.iterrows():
         target = int(row["target_label"])
         if target not in functions_by_label:
             functions_by_label[target] = model.class_probability(target)
-            shap_explainers_by_label[target] = shap.KernelExplainer(
-                functions_by_label[target], background
-            )
+            if "shap" in enabled:
+                shap_explainers_by_label[target] = shap_module.KernelExplainer(
+                    functions_by_label[target], background
+                )
 
         f = functions_by_label[target]
-        shap_values = shap_explainers_by_label[target].shap_values(
-            X[i : i + 1], nsamples=n_shap_samples, silent=True, l1_reg=0
+        if "shap" in enabled:
+            shap_values = shap_explainers_by_label[target].shap_values(
+                X[i : i + 1], nsamples=n_shap_samples, silent=True, l1_reg=0
+            )
+            scores["shap"].append(np.asarray(shap_values).reshape(-1))
+        if ig_explainer is not None:
+            scores["integrated_gradients"].append(
+                ig_explainer.explain(f, X[i]).as_array()
+            )
+        if gradient_x_input_explainer is not None:
+            scores["gradient_x_input"].append(
+                gradient_x_input_explainer.explain(f, X[i]).as_array()
+            )
+        if saliency_explainer is not None:
+            scores["saliency"].append(saliency_explainer.explain(f, X[i]).as_array())
+        log.info(
+            "[%s/%s] sample_index=%s target=%s",
+            i + 1,
+            len(X),
+            row["sample_index"],
+            target,
         )
-        scores["shap"].append(np.asarray(shap_values).reshape(-1))
-        scores["integrated_gradients"].append(ig_explainer.explain(f, X[i]).as_array())
-        scores["saliency"].append(saliency_explainer.explain(f, X[i]).as_array())
-        log.info("[%s/%s] sample_index=%s target=%s", i + 1, len(X), row["sample_index"], target)
 
-    return {name: attribution_frame(sample_meta, values) for name, values in scores.items()}
+    return {
+        name: attribution_frame(sample_meta, values)
+        for name, values in scores.items()
+    }
 
 
 def attribute_marginalminshap(
@@ -118,21 +173,35 @@ def attribute_marginalminshap(
     model: MNISTResNetFlat,
     n_orderings: int,
     seed: int,
+    background_eval_size: int | str | None = None,
+    prefix_batch_size: int = 32,
 ) -> pd.DataFrame:
-    """Marginal minSHAP: same coalitions/masking as shap, aggregated with min."""
-    explainers_by_label = {}
+    """Marginal minSHAP with fixed-background batched prefix evaluation."""
+    n_orderings = int(n_orderings)
+    prefix_batch_size = int(prefix_batch_size)
+    background_eval = fixed_background_sample(background, background_eval_size, seed)
+    log.info(
+        "Running marginalminshap with n_orderings=%s, background_eval_rows=%s, "
+        "prefix_batch_size=%s",
+        n_orderings,
+        len(background_eval),
+        prefix_batch_size,
+    )
+
     scores = []
 
     for i, row in sample_meta.iterrows():
         target = int(row["target_label"])
-        if target not in explainers_by_label:
-            explainers_by_label[target] = presets.marginalminshap(
-                background, n_orderings, seed
-            )
-
         f = model.class_probability(target)
-        explainer = explainers_by_label[target]
-        scores.append(explainer.explain(f, X[i]).as_array())
+        sample_scores = marginal_minshap_batched(
+            f,
+            X[i],
+            background_eval,
+            n_orderings=n_orderings,
+            seed=seed,
+            prefix_batch_size=prefix_batch_size,
+        )
+        scores.append(sample_scores)
         log.info(
             "[marginalminshap %s/%s] sample_index=%s target=%s",
             i + 1, len(X), row["sample_index"], target,
