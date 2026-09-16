@@ -1,8 +1,9 @@
-# axiomatic_interpretability
+# Null Importance
 
 - `case_studies`: Example model training and explanation using synthetic and real data.
 
    - `sweep_tabular`: Synthetic null importance examples.
+   - `mnist_resnet`: Local attributions for a simple MNIST classifier.
    - `tcga_brca`: Explanation of a breast cancer tissue type classifier.
 
 - `src`: Reusable local and global feature importance functions.
